@@ -20,11 +20,12 @@ async fn main() {
         let mut has_inbox_tag = false;
         for t in &d.tags {
             if let Some(tag_def) = tags.iter().filter(|td| td.id == *t).collect::<Vec<_>>().first() {
-                has_inbox_tag = tag_def.is_inbox_tag.is_some_and(|v| v)
+                has_inbox_tag = tag_def.is_inbox_tag.is_some_and(|v| v);
+                break;
             }
         }
         has_inbox_tag
     }).collect();
 
-    println!("{docs:#?}")
+    println!("{}", docs.len())
 }
