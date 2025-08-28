@@ -1,10 +1,6 @@
-use std::fs::File;
-
-use paperless_api_client::{types::Document, Client};
+use paperless_api_client::{Client};
 
 mod requests;
-
-
 
 #[tokio::main]
 async fn main() {
@@ -12,7 +8,7 @@ async fn main() {
     let mut api_client = Client::new_from_env();
     api_client.set_base_url("https://judge-paperless.16.wlandt.de");
 
-    let c_fields = requests::get_all_custom_fields(&mut api_client).await;
+    let _c_fields = requests::get_all_custom_fields(&mut api_client).await;
     let tags = requests::get_all_tags(&mut api_client).await;
     let mut docs = requests::get_all_docs(&mut api_client).await;
 
