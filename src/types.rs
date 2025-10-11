@@ -5,8 +5,21 @@ use serde_json::Value;
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub(crate) struct FieldExtract {
+    /// this field is used to guide the model to extract the desired data
+    /// during grammar generation the string will be set to a constant value
+    /// with the content being the name of the custom field that is to be extracted
     field_description: String,
+    /// since the custom field can hold any kind of data a generic json value is required to
+    /// to hold it. During grammar generation the type of this value will be replaced with
+    /// the type of the custom field
     field_value: Value,
+    /// as with `field_value` the element type will be replaced during grammar generation
+    /// to correspond to the type of the custom field. This field currently does not really
+    /// do much, the idea would be to use it in training for reward models if output the correct field
+    /// here although it might have put the wrong value in the actual value field. Not sure if this makes
+    /// sense though. Another idea would be to add these as suggestions to paperless, but for that to work
+    /// custom field suggestions would need to be implemented for paperless first. I don't think they are
+    /// at the moment
     alternative_values: Vec<Value>,
 }
 
