@@ -18,3 +18,4 @@ llama-cpp-2 = { path = "../../llama-cpp-rs/llama-cpp-2", features = ["vulkan"]}
 encoding_rs = "0.8.35"
 schemars = { version = "1.0.4", features = ["chrono04", "derive"] }
 chrono = "0.4.41"
+thiserror = "2.0.17"
