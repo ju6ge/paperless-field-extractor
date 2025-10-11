@@ -11,7 +11,8 @@ serde_json = "1.0.143"
 futures = "0.3.31"
 log = "0.4.27"
 colog = "1.3.0"
-gbnf = "0.2.5"
+#gbnf = "0.2.5"
+gbnf = { path = "../../gbnf/gbnf/" }
 #llama-cpp-2 = { version = "0.1.121", features = ["vulkan"]}
 llama-cpp-2 = { path = "../../llama-cpp-rs/llama-cpp-2", features = ["vulkan"]}
 encoding_rs = "0.8.35"

@@ -1,23 +1,23 @@
+use extract::CustomFieldModelExtractor;
 use paperless_api_client::Client;
 use types::schema_from_custom_field;
 
-mod types;
-//mod extract;
+mod extract;
 mod requests;
+mod types;
 
-async fn fetch_stuff_from_paperless(api_client: &mut Client) {
-    let c_fields = requests::get_all_custom_fields(api_client).await;
-    let tags = requests::get_all_tags(api_client).await;
-    let mut docs = requests::get_all_docs(api_client).await;
+#[tokio::main]
+async fn main() {
+    colog::init();
 
-    for cf in c_fields {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(schema_from_custom_field(cf).unwrap().as_value()).unwrap()
-        )
-    }
+    let mut api_client = Client::new_from_env();
+    api_client.set_base_url("https://judge-paperless.16.wlandt.de");
 
-    docs = docs
+    let custom_fields = requests::get_all_custom_fields(&mut api_client).await;
+    let tags = requests::get_all_tags(&mut api_client).await;
+    let mut docs_with_empty_custom_fields = requests::get_all_docs(&mut api_client).await;
+    // find document with empty custom fields
+    docs_with_empty_custom_fields = docs_with_empty_custom_fields
         .into_iter()
         .filter(|d| {
             let mut has_inbox_tag = false;
@@ -34,17 +34,45 @@ async fn fetch_stuff_from_paperless(api_client: &mut Client) {
             }
             has_inbox_tag
         })
+        .filter(|d| {
+            d.custom_fields.as_ref().is_some_and(|cfields| {
+                !cfields
+                    .iter()
+                    .filter(|f| f.value.is_none())
+                    .collect::<Vec<_>>()
+                    .is_empty()
+            })
+        })
         .collect();
 
-    println!("{}", docs.len())
-}
-
-#[tokio::main]
-async fn main() {
-    colog::init();
-
-    let mut api_client = Client::new_from_env();
-    api_client.set_base_url("https://judge-paperless.16.wlandt.de");
-
-    fetch_stuff_from_paperless(&mut api_client).await;
+    for cf in custom_fields {
+        log::info!("Processing documents with empty {} custom fields.", cf.name);
+        let docs_to_process = docs_with_empty_custom_fields
+            .iter()
+            .filter(|doc| {
+                doc.custom_fields.as_ref().is_some_and(|doc_cf| {
+                    !doc_cf
+                        .iter()
+                        .filter(|cf_instance| {
+                            cf_instance.field == cf.id && cf_instance.value.is_none()
+                        })
+                        .collect::<Vec<_>>()
+                        .is_empty()
+                })
+            })
+            .collect::<Vec<_>>();
+        if docs_to_process.is_empty() {
+            continue;
+        }
+        if let Some(field_grammar) = schema_from_custom_field(&cf) {
+            println!("{}", serde_json::to_string_pretty(&field_grammar).unwrap());
+            let mut model_extractor = CustomFieldModelExtractor::new(&field_grammar);
+            for doc in docs_to_process {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&model_extractor.extract(doc)).unwrap()
+                );
+            }
+        }
+    }
 }

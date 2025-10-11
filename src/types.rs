@@ -21,7 +21,7 @@ pub(crate) struct FieldSelect {
     select_options: Vec<SelectOption>,
 }
 
-pub(crate) fn schema_from_custom_field(cf: CustomField) -> Option<schemars::Schema> {
+pub(crate) fn schema_from_custom_field(cf: &CustomField) -> Option<schemars::Schema> {
     let mut base_schema = schema_for!(FieldExtract);
     // set field of description schema as a constant string value matching the name
     // of the custom field. This should guide the llm token generation to extract the
@@ -47,7 +47,7 @@ pub(crate) fn schema_from_custom_field(cf: CustomField) -> Option<schemars::Sche
             } else {
                 return None;
             };
-            let enum_values = serde_json::to_string(
+            let enum_values = serde_json::to_value(
                 &select_options
                     .select_options
                     .into_iter()
