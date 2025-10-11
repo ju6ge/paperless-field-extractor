@@ -1,7 +1,15 @@
 use paperless_api_client::types::CustomField;
 use schemars::{JsonSchema, json_schema, schema_for};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
+use thiserror::Error;
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+/// Structure to extract currency data from a document
+pub(crate) struct CurrencyValue {
+    value: f64,
+    currency_code: String,
+}
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub(crate) struct FieldExtract {
@@ -53,7 +61,7 @@ pub(crate) fn schema_from_custom_field(cf: &CustomField) -> Option<schemars::Sch
         paperless_api_client::types::DataTypeEnum::Boolean => schema_for!(bool),
         paperless_api_client::types::DataTypeEnum::Integer => schema_for!(i64),
         paperless_api_client::types::DataTypeEnum::Float => schema_for!(f64),
-        paperless_api_client::types::DataTypeEnum::Monetary => schema_for!(f64),
+        paperless_api_client::types::DataTypeEnum::Monetary => schema_for!(CurrencyValue),
         paperless_api_client::types::DataTypeEnum::Select => {
             let select_options: FieldSelect = if let Some(v) = &cf.extra_data {
                 serde_json::from_value(v.clone()).unwrap()

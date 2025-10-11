@@ -43,6 +43,15 @@ fn gen_gbnf(schema: &schemars::Schema, eos_token: String) -> String {
             }
         }
     }
+    if let Some(p) = gram.recurring_items.get_mut(&NonTerminalSymbol {
+        name: "ws".to_string(),
+    }) {
+        if let Some(last_item) = p.items.last_mut() {
+            if let ProductionItem::CharacterSet(_, rep_type) = last_item {
+                *rep_type = RepetitionType::One
+            }
+        }
+    }
     gram.to_string()
 }
 
