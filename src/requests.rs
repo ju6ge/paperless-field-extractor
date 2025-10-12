@@ -2,8 +2,10 @@ use futures::StreamExt;
 use log::{error, info};
 use paperless_api_client::{
     Client,
-    types::{CustomField, Document, Tag},
+    types::{CustomField, Document, Tag, TagRequest, User},
 };
+
+use crate::config;
 
 pub async fn get_all_custom_fields(client: &mut Client) -> Vec<CustomField> {
     info!("Requesting Custom Fields from Server");
@@ -182,5 +184,49 @@ pub async fn get_all_docs(client: &mut Client) -> Vec<Document> {
                 .ok()
         })
         .collect()
+        .await
+}
+
+pub(crate) async fn get_all_users(api_client: &mut Client) -> Vec<User> {
+    api_client
+        .users()
+        .list_stream(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        )
+        .filter_map(async |user_request| {
+            user_request
+                .map_err(|err| {
+                    error!("{err}");
+                    err
+                })
+                .ok()
+        })
+        .collect()
+        .await
+}
+
+pub(crate) async fn create_tag(
+    api_client: &mut Client,
+    tag_user: &User,
+    tag_name: &String,
+    tag_color: &String,
+) -> Result<Tag, paperless_api_client::types::error::Error> {
+    api_client
+        .tags()
+        .create(&TagRequest {
+            name: tag_name.clone(),
+            color: Some(tag_color.clone()),
+            match_: Some("".to_string()),
+            matching_algorithm: Some(0),
+            is_insensitive: Some(true),
+            is_inbox_tag: Some(false),
+            owner: Some(tag_user.id),
+            set_permissions: None,
+        })
         .await
 }

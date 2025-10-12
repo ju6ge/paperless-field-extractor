@@ -10,11 +10,11 @@ use llama_cpp_2::token::LlamaToken;
 use paperless_api_client::types::Document;
 use schemars::{JsonSchema, Schema, schema_for};
 use std::io::Write;
+use std::iter::RepeatWith;
 use std::num::NonZeroU32;
 use std::path::Path;
-use std::process::exit;
 
-use gbnf::{self, GrammarItem, TerminalSymbol};
+use gbnf::{self, GrammarItem, NonTerminalSymbol, ProductionItem, RepetitionType, TerminalSymbol};
 
 use crate::types::FieldExtract;
 
@@ -96,7 +96,7 @@ impl CustomFieldModelExtractor {
 
     pub fn extract(&mut self, base_data: &Document) -> FieldExtract {
         self.sampler.reset();
-        let prompt = serde_json::to_string(base_data).unwrap();
+        let prompt = format!("{}\n", serde_json::to_string(base_data).unwrap());
         let mut ctx = self
             .model
             .new_context(&self.backend, self.ctx_params.clone())
@@ -139,6 +139,8 @@ impl CustomFieldModelExtractor {
                 let mut output_string = String::with_capacity(128);
                 let _decode_result =
                     decoder.decode_to_string(&output_bytes, &mut output_string, false);
+                //print!("{output_string}");
+                //std::io::stdout().flush();
                 output.push_str(&output_string);
 
                 batch.clear();

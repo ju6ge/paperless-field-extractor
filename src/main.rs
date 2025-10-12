@@ -1,7 +1,14 @@
+use std::process::exit;
+
+use config::Config;
 use extract::CustomFieldModelExtractor;
-use paperless_api_client::Client;
+use paperless_api_client::{
+    Client,
+    types::{SetPermissions, TagRequest, error},
+};
 use types::schema_from_custom_field;
 
+mod config;
 mod extract;
 mod requests;
 mod types;
@@ -10,12 +17,94 @@ mod types;
 async fn main() {
     colog::init();
 
+    let config = Config::default();
+
     let mut api_client = Client::new_from_env();
     api_client.set_base_url("https://judge-paperless.16.wlandt.de");
 
     let custom_fields = requests::get_all_custom_fields(&mut api_client).await;
     let tags = requests::get_all_tags(&mut api_client).await;
+    let users = requests::get_all_users(&mut api_client).await;
+
+    println!("{tags:#?}");
+    exit(1);
+
+    //make sure tags for processing and finshed exists
+    let (user, processing_tag) = if tags
+        .iter()
+        .filter(|t| t.name == config.processing_tag)
+        .next()
+        .is_none()
+    {
+        if let Some(user) = users
+            .iter()
+            .filter(|user| user.username == config.tag_user_name)
+            .next()
+        {
+            let processing_tag = requests::create_tag(
+                &mut api_client,
+                user,
+                &config.processing_tag,
+                &config.processing_color,
+            )
+            .await
+            .map_err(|err| {
+                log::error!("could not create processing tag: {err}");
+                err
+            })
+            .map(|tag| {
+                log::info!(
+                    "created processing tag `{}` to paperless ",
+                    config.processing_tag
+                );
+                tag
+            })
+            .ok();
+            (user, processing_tag)
+        } else {
+            log::error!(
+                "Can not create any tags, because configured user `{}` does not exists in paperless!",
+                config.tag_user_name
+            );
+            exit(1)
+        }
+    } else {
+        todo!()
+    };
+
+    let finished_tag = if tags
+        .iter()
+        .filter(|t| t.name == config.finished_tag)
+        .next()
+        .is_none()
+    {
+        requests::create_tag(
+            &mut api_client,
+            user,
+            &config.finished_tag,
+            &config.finished_color,
+        )
+        .await
+        .map_err(|err| {
+            log::error!("could not create finished tag: {err}");
+            err
+        })
+        .map(|tag| {
+            log::info!(
+                "created processing tag `{}` to paperless ",
+                config.processing_tag
+            );
+            tag
+        })
+        .ok()
+    } else {
+        todo!()
+    };
+
     let mut docs_with_empty_custom_fields = requests::get_all_docs(&mut api_client).await;
+
+    //println!("{:#?}", docs_with_empty_custom_fields);
+    //exit(1);
     // find document with empty custom fields
     docs_with_empty_custom_fields = docs_with_empty_custom_fields
         .into_iter()
@@ -65,7 +154,6 @@ async fn main() {
             continue;
         }
         if let Some(field_grammar) = schema_from_custom_field(&cf) {
-            println!("{}", serde_json::to_string_pretty(&field_grammar).unwrap());
             let mut model_extractor = CustomFieldModelExtractor::new(&field_grammar);
             for doc in docs_to_process {
                 println!(
