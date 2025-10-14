@@ -26,8 +26,17 @@ async fn main() {
     let tags = requests::get_all_tags(&mut api_client).await;
     let users = requests::get_all_users(&mut api_client).await;
 
-    println!("{tags:#?}");
-    exit(1);
+    let user = users
+        .iter()
+        .filter(|user| user.username == config.tag_user_name)
+        .next()
+        .or_else(|| {
+            log::warn!(
+                "configured user `{}` could not be found, running without user!",
+                config.tag_user_name
+            );
+            None
+        });
 
     //make sure tags for processing and finshed exists
     let (user, processing_tag) = if tags
@@ -36,40 +45,30 @@ async fn main() {
         .next()
         .is_none()
     {
-        if let Some(user) = users
-            .iter()
-            .filter(|user| user.username == config.tag_user_name)
-            .next()
-        {
-            let processing_tag = requests::create_tag(
-                &mut api_client,
-                user,
-                &config.processing_tag,
-                &config.processing_color,
-            )
-            .await
-            .map_err(|err| {
-                log::error!("could not create processing tag: {err}");
-                err
-            })
-            .map(|tag| {
-                log::info!(
-                    "created processing tag `{}` to paperless ",
-                    config.processing_tag
-                );
-                tag
-            })
-            .ok();
-            (user, processing_tag)
-        } else {
-            log::error!(
-                "Can not create any tags, because configured user `{}` does not exists in paperless!",
-                config.tag_user_name
+        requests::create_tag(
+            &mut api_client,
+            user,
+            &config.processing_tag,
+            &config.processing_color,
+        )
+        .await
+        .map_err(|err| {
+            log::error!("could not create processing tag: {err}");
+            err
+        })
+        .map(|tag| {
+            log::info!(
+                "created processing tag `{}` to paperless ",
+                config.processing_tag
             );
-            exit(1)
-        }
+            tag
+        })
+        .ok()
     } else {
-        todo!()
+        tags.iter()
+            .filter(|t| t.name == config.processing_tag)
+            .next()
+            .map(|t| t.clone())
     };
 
     let finished_tag = if tags
@@ -92,13 +91,16 @@ async fn main() {
         .map(|tag| {
             log::info!(
                 "created processing tag `{}` to paperless ",
-                config.processing_tag
+                config.finished_tag
             );
             tag
         })
         .ok()
     } else {
-        todo!()
+        tags.iter()
+            .filter(|t| t.name == config.finished_tag)
+            .next()
+            .map(|t| t.clone())
     };
 
     let mut docs_with_empty_custom_fields = requests::get_all_docs(&mut api_client).await;

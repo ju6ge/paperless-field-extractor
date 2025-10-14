@@ -212,7 +212,7 @@ pub(crate) async fn get_all_users(api_client: &mut Client) -> Vec<User> {
 
 pub(crate) async fn create_tag(
     api_client: &mut Client,
-    tag_user: &User,
+    tag_user: Option<&User>,
     tag_name: &String,
     tag_color: &String,
 ) -> Result<Tag, paperless_api_client::types::error::Error> {
@@ -225,7 +225,7 @@ pub(crate) async fn create_tag(
             matching_algorithm: Some(0),
             is_insensitive: Some(true),
             is_inbox_tag: Some(false),
-            owner: Some(tag_user.id),
+            owner: tag_user.map(|u| u.id),
             set_permissions: None,
         })
         .await
