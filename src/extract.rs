@@ -153,7 +153,7 @@ impl CustomFieldModelExtractor {
         }
         // remove eos token
         let output = output.replace(&self.eos_string, "");
-        println!("{output}");
+        //println!("{output}");
         serde_json::from_str(&output).unwrap()
     }
 }

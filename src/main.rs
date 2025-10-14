@@ -39,7 +39,7 @@ async fn main() {
         });
 
     //make sure tags for processing and finshed exists
-    let (user, processing_tag) = if tags
+    let processing_tag = if tags
         .iter()
         .filter(|t| t.name == config.processing_tag)
         .next()
@@ -103,12 +103,9 @@ async fn main() {
             .map(|t| t.clone())
     };
 
-    let mut docs_with_empty_custom_fields = requests::get_all_docs(&mut api_client).await;
-
-    //println!("{:#?}", docs_with_empty_custom_fields);
-    //exit(1);
     // find document with empty custom fields
-    docs_with_empty_custom_fields = docs_with_empty_custom_fields
+    let docs_with_empty_custom_fields = requests::get_all_docs(&mut api_client)
+        .await
         .into_iter()
         .filter(|d| {
             let mut has_inbox_tag = false;
@@ -134,7 +131,7 @@ async fn main() {
                     .is_empty()
             })
         })
-        .collect();
+        .collect::<Vec<_>>();
 
     for cf in custom_fields {
         log::info!("Processing documents with empty {} custom fields.", cf.name);
