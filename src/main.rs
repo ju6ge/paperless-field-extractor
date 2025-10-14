@@ -103,8 +103,16 @@ async fn main() {
             .map(|t| t.clone())
     };
 
+    if processing_tag.is_none() || finished_tag.is_none() {
+        log::error!("Processing and Finshed Tags could neither be found nor created! Exiting …");
+        exit(1);
+    }
+
+    let processing_tag = processing_tag.unwrap();
+    let finished_tag = finished_tag.unwrap();
+
     // find document with empty custom fields
-    let docs_with_empty_custom_fields = requests::get_all_docs(&mut api_client)
+    let mut docs_with_empty_custom_fields = requests::get_all_docs(&mut api_client)
         .await
         .into_iter()
         .filter(|d| {
@@ -132,6 +140,36 @@ async fn main() {
             })
         })
         .collect::<Vec<_>>();
+
+    // add processing tag to all documents with unpopulated custom fields
+    for doc in &mut docs_with_empty_custom_fields {
+        let mut current_doc_tags = tags
+            .iter()
+            .filter(|tag| doc.tags.contains(&tag.id))
+            .collect::<Vec<_>>();
+        // if the current document tags contain the processing tag already skip to the next document
+        if current_doc_tags
+            .iter()
+            .filter(|t| t.id == processing_tag.id)
+            .next()
+            .is_some()
+        {
+            continue;
+        }
+        current_doc_tags.push(&processing_tag);
+        let _ = requests::update_document_tags(&mut api_client, doc, &current_doc_tags)
+            .await
+            .map(|_| {
+                log::debug!("Added processing tag to document with id {}", doc.id);
+            })
+            .map_err(|err| {
+                log::warn!(
+                    "Could not add processing tag to document with id {}: {err}",
+                    doc.id
+                );
+                err
+            });
+    }
 
     for cf in custom_fields {
         log::info!("Processing documents with empty {} custom fields.", cf.name);

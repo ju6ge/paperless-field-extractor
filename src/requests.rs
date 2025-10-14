@@ -2,7 +2,10 @@ use futures::StreamExt;
 use log::{error, info};
 use paperless_api_client::{
     Client,
-    types::{CustomField, Document, Tag, TagRequest, User},
+    types::{
+        CustomField, CustomFieldInstance, Document, DocumentRequest, PatchedDocumentRequest, Tag,
+        TagRequest, User,
+    },
 };
 
 use crate::config;
@@ -229,4 +232,42 @@ pub(crate) async fn create_tag(
             set_permissions: None,
         })
         .await
+}
+
+pub(crate) async fn update_document_tags(
+    api_client: &mut Client,
+    doc: &mut Document,
+    tags: &[&Tag],
+) -> Result<(), paperless_api_client::types::error::Error> {
+    *doc = api_client
+        .documents()
+        .partial_update(
+            doc.id,
+            &PatchedDocumentRequest {
+                tags: Some(tags.iter().map(|t| t.id).collect()),
+                correspondent: Default::default(),
+                document_type: Default::default(),
+                storage_path: Default::default(),
+                title: Default::default(),
+                content: Default::default(),
+                created: Default::default(),
+                created_date: Default::default(),
+                deleted_at: Default::default(),
+                archive_serial_number: Default::default(),
+                owner: Default::default(),
+                set_permissions: Default::default(),
+                custom_fields: Default::default(),
+                remove_inbox_tags: Default::default(),
+            },
+        )
+        .await?;
+    Ok(())
+}
+
+pub(crate) async fn update_document_custom_fields(
+    client: &mut Client,
+    doc: &mut Document,
+    custom_fields: &[&CustomFieldInstance],
+) -> Result<(), paperless_api_client::types::error::Error> {
+    todo!()
 }
