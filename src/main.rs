@@ -217,7 +217,11 @@ async fn main() {
                         )
                         .await
                         .map(|_| {
-                            log::debug!("Updated custom fields for document with id {}", doc.id);
+                            log::info!(
+                                "Updated custom field {} for document with id {}",
+                                cf.name,
+                                doc.id
+                            );
                         })
                         .map_err(|err| {
                             log::error!(
@@ -242,22 +246,22 @@ async fn main() {
                             .filter(|tag| tag.name != config.processing_tag) // remove processing tag from document
                             .collect::<Vec<_>>();
                         current_doc_tags.push(&finished_tag);
-                        let _ = requests::update_document_tags(
-                            &mut api_client,
-                            doc,
-                            &current_doc_tags,
-                        )
-                        .await
-                        .map(|_| {
-                            log::debug!("Added finished tag to document with id {}", doc.id);
-                        })
-                        .map_err(|err| {
-                            log::warn!(
-                                "Could not add finished tag to document with id {}: {err}",
-                                doc.id
-                            );
-                            err
-                        });
+                        let _ =
+                            requests::update_document_tags(&mut api_client, doc, &current_doc_tags)
+                                .await
+                                .map(|_| {
+                                    log::debug!(
+                                        "Added finished tag to document with id {}",
+                                        doc.id
+                                    );
+                                })
+                                .map_err(|err| {
+                                    log::warn!(
+                                        "Could not add finished tag to document with id {}: {err}",
+                                        doc.id
+                                    );
+                                    err
+                                });
                     }
                 }
             }
