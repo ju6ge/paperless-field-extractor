@@ -174,7 +174,7 @@ async fn main() {
     for cf in custom_fields {
         log::info!("Processing documents with empty {} custom fields.", cf.name);
         let docs_to_process = docs_with_empty_custom_fields
-            .iter()
+            .iter_mut()
             .filter(|doc| {
                 doc.custom_fields.as_ref().is_some_and(|doc_cf| {
                     !doc_cf
@@ -193,10 +193,73 @@ async fn main() {
         if let Some(field_grammar) = schema_from_custom_field(&cf) {
             let mut model_extractor = CustomFieldModelExtractor::new(&field_grammar);
             for doc in docs_to_process {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&model_extractor.extract(doc)).unwrap()
-                );
+                let extracted_custom_field_data = model_extractor.extract(doc);
+                if let Ok(cf_inst) = extracted_custom_field_data.to_custom_field_instance(&cf) {
+                    // need to get at the custom field list with the following if let
+                    // since we are only processing documnts with custom fields this will always be some
+                    // list of custom fields
+                    if let Some(doc_custom_fields) = &mut doc.custom_fields {
+                        let updated_custom_fields = doc_custom_fields
+                            .iter_mut()
+                            .map(|doc_cf| {
+                                if doc_cf.field == cf_inst.field {
+                                    *doc_cf = cf_inst.clone()
+                                }
+                                doc_cf
+                            })
+                            .map(|cf| cf.clone())
+                            .collect::<Vec<_>>();
+                        // send extracted custom field to server and update document
+                        let _ = requests::update_document_custom_fields(
+                            &mut api_client,
+                            doc,
+                            updated_custom_fields.as_slice(),
+                        )
+                        .await
+                        .map(|_| {
+                            log::debug!("Updated custom fields for document with id {}", doc.id);
+                        })
+                        .map_err(|err| {
+                            log::error!(
+                                "Error updating custom field {} on document with id {}! \n {err}",
+                                cf.name,
+                                doc.id
+                            );
+                            err
+                        });
+                    }
+                    // if all custom fields have been filled then updated tag to indicate finished status
+                    if doc.custom_fields.as_ref().is_some_and(|custom_fields| {
+                        custom_fields
+                            .iter()
+                            .filter(|cf| cf.value.is_none()) // if there are any custom fields with empty values
+                            .next() // then processing for this document has not finished
+                            .is_none()
+                    }) {
+                        let mut current_doc_tags = tags
+                            .iter()
+                            .filter(|tag| doc.tags.contains(&tag.id))
+                            .filter(|tag| tag.name != config.processing_tag) // remove processing tag from document
+                            .collect::<Vec<_>>();
+                        current_doc_tags.push(&finished_tag);
+                        let _ = requests::update_document_tags(
+                            &mut api_client,
+                            doc,
+                            &current_doc_tags,
+                        )
+                        .await
+                        .map(|_| {
+                            log::debug!("Added finished tag to document with id {}", doc.id);
+                        })
+                        .map_err(|err| {
+                            log::warn!(
+                                "Could not add finished tag to document with id {}: {err}",
+                                doc.id
+                            );
+                            err
+                        });
+                    }
+                }
             }
         }
     }
