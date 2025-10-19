@@ -65,9 +65,12 @@ pub(crate) struct CustomFieldModelExtractor {
 
 impl CustomFieldModelExtractor {
     pub fn new(response_schema: &Schema) -> Self {
-        let model_path = "./gemma-3-4b-it-UD-Q8_K_XL.gguf";
+        let model_path = "./DeepSeek-R1-0528-Qwen3-8B-UD-Q3_K_XL.gguf";
+        //let model_path = "./DeepSeek-R1-0528-Qwen3-8B-UD-IQ1_S.gguf";
+        //let model_path = "./mineru2.5-2509-1.2b-q8_0.gguf";
+        //let model_path = "./gemma-3-4b-it-UD-Q8_K_XL.gguf";
         let mut backend = LlamaBackend::init().unwrap();
-        backend.void_logs();
+        //backend.void_logs();
         let params = LlamaModelParams::default().with_n_gpu_layers(40);
         let model = LlamaModel::load_from_file(&backend, model_path, &params)
             .expect("unable to load model");
@@ -139,8 +142,8 @@ impl CustomFieldModelExtractor {
                 let mut output_string = String::with_capacity(128);
                 let _decode_result =
                     decoder.decode_to_string(&output_bytes, &mut output_string, false);
-                //print!("{output_string}");
-                //std::io::stdout().flush();
+                print!("{output_string}");
+                std::io::stdout().flush();
                 output.push_str(&output_string);
 
                 batch.clear();

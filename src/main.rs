@@ -125,7 +125,9 @@ async fn main() {
                     .first()
                 {
                     has_inbox_tag = tag_def.is_inbox_tag.is_some_and(|v| v);
-                    break;
+                    if has_inbox_tag {
+                        break;
+                    }
                 }
             }
             has_inbox_tag
@@ -134,7 +136,9 @@ async fn main() {
             d.custom_fields.as_ref().is_some_and(|cfields| {
                 !cfields
                     .iter()
-                    .filter(|f| f.value.is_none())
+                    .filter(|f| {
+                        f.value.is_none()
+                    })
                     .collect::<Vec<_>>()
                     .is_empty()
             })
@@ -171,8 +175,9 @@ async fn main() {
             });
     }
 
+    eprintln!("{docs_with_empty_custom_fields:#?}");
+
     for cf in custom_fields {
-        log::info!("Processing documents with empty {} custom fields.", cf.name);
         let docs_to_process = docs_with_empty_custom_fields
             .iter_mut()
             .filter(|doc| {
@@ -187,6 +192,7 @@ async fn main() {
                 })
             })
             .collect::<Vec<_>>();
+        log::info!("Processing documents with empty {} custom fields … Documents to process {}", cf.name, docs_to_process.len());
         if docs_to_process.is_empty() {
             continue;
         }
