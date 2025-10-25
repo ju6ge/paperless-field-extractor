@@ -1,6 +1,6 @@
-use std::process::exit;
+use std::{path::Path, process::exit};
 
-use config::Config;
+use config::{Config, OverlayConfig};
 use extract::CustomFieldModelExtractor;
 use paperless_api_client::{
     Client,
@@ -17,7 +17,18 @@ mod types;
 async fn main() {
     colog::init();
 
-    let config = Config::default();
+    let config = Config::default()
+        .overlay_config(OverlayConfig::read_config_toml(Path::new("./config.toml")));
+
+    let model_path = Path::new(&config.model)
+        .canonicalize()
+        .map_err(|err| {
+            log::error!(
+                "Could not find model file! Can not run without a language model! … Stop execution!"
+            );
+            err
+        })
+        .unwrap();
 
     let mut api_client = Client::new_from_env();
     api_client.set_base_url("https://judge-paperless.16.wlandt.de");
@@ -136,9 +147,7 @@ async fn main() {
             d.custom_fields.as_ref().is_some_and(|cfields| {
                 !cfields
                     .iter()
-                    .filter(|f| {
-                        f.value.is_none()
-                    })
+                    .filter(|f| f.value.is_none())
                     .collect::<Vec<_>>()
                     .is_empty()
             })
@@ -192,12 +201,20 @@ async fn main() {
                 })
             })
             .collect::<Vec<_>>();
-        log::info!("Processing documents with empty {} custom fields … Documents to process {}", cf.name, docs_to_process.len());
+        log::info!(
+            "Processing documents with empty {} custom fields … Documents to process {}",
+            cf.name,
+            docs_to_process.len()
+        );
         if docs_to_process.is_empty() {
             continue;
         }
         if let Some(field_grammar) = schema_from_custom_field(&cf) {
-            let mut model_extractor = CustomFieldModelExtractor::new(&field_grammar);
+            let mut model_extractor = CustomFieldModelExtractor::new(
+                model_path.as_path(),
+                config.num_gpu_layers,
+                &field_grammar,
+            );
             for doc in docs_to_process {
                 let extracted_custom_field_data = model_extractor.extract(doc);
                 if let Ok(cf_inst) = extracted_custom_field_data.to_custom_field_instance(&cf) {

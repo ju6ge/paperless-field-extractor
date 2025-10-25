@@ -64,14 +64,10 @@ pub(crate) struct CustomFieldModelExtractor {
 }
 
 impl CustomFieldModelExtractor {
-    pub fn new(response_schema: &Schema) -> Self {
-        let model_path = "./DeepSeek-R1-0528-Qwen3-8B-UD-Q3_K_XL.gguf";
-        //let model_path = "./DeepSeek-R1-0528-Qwen3-8B-UD-IQ1_S.gguf";
-        //let model_path = "./mineru2.5-2509-1.2b-q8_0.gguf";
-        //let model_path = "./gemma-3-4b-it-UD-Q8_K_XL.gguf";
+    pub fn new(model_path: &Path, num_gpu_layers: usize, response_schema: &Schema) -> Self {
         let mut backend = LlamaBackend::init().unwrap();
-        //backend.void_logs();
-        let params = LlamaModelParams::default().with_n_gpu_layers(40);
+        backend.void_logs();
+        let params = LlamaModelParams::default().with_n_gpu_layers(num_gpu_layers as u32);
         let model = LlamaModel::load_from_file(&backend, model_path, &params)
             .expect("unable to load model");
         let ctx_params = LlamaContextParams::default()
@@ -132,7 +128,7 @@ impl CustomFieldModelExtractor {
                 //sampler.accept(token);
 
                 // is it an end of stream?
-                if token == self.model.token_eos() {
+                if token == self.model.token_eos() || output.ends_with(&self.eos_string) {
                     eprintln!();
                     break;
                 }
