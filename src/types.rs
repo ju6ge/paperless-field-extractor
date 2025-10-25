@@ -149,6 +149,13 @@ pub(crate) struct FieldSelect {
     select_options: Vec<SelectOption>,
 }
 
+pub(crate) fn custom_field_learning_supported(cf: &CustomField) -> bool {
+    match cf.data_type {
+        DataTypeEnum::Documentlink | DataTypeEnum::Url => false,
+        _ => true,
+    }
+}
+
 pub(crate) fn schema_from_custom_field(cf: &CustomField) -> Option<schemars::Schema> {
     let mut base_schema = schema_for!(FieldExtract);
     // set field of description schema as a constant string value matching the name

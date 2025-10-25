@@ -2,11 +2,8 @@ use std::{path::Path, process::exit};
 
 use config::{Config, OverlayConfig};
 use extract::CustomFieldModelExtractor;
-use paperless_api_client::{
-    Client,
-    types::{SetPermissions, TagRequest, error},
-};
-use types::schema_from_custom_field;
+use paperless_api_client::Client;
+use types::{custom_field_learning_supported, schema_from_custom_field};
 
 mod config;
 mod extract;
@@ -33,7 +30,17 @@ async fn main() {
     let mut api_client = Client::new_from_env();
     api_client.set_base_url("https://judge-paperless.16.wlandt.de");
 
-    let custom_fields = requests::get_all_custom_fields(&mut api_client).await;
+    let custom_fields = requests::get_all_custom_fields(&mut api_client)
+        .await
+        .into_iter()
+        .filter(|cf| {
+            let learing_supported = custom_field_learning_supported(&cf);
+            if !learing_supported {
+                log::warn!("Custom Fields with name `{}` are using an unsupported custom field type, will be ignored!", cf.name)
+            }
+            learing_supported
+        })
+        .collect::<Vec<_>>();
     let tags = requests::get_all_tags(&mut api_client).await;
     let users = requests::get_all_users(&mut api_client).await;
 
@@ -147,6 +154,14 @@ async fn main() {
             d.custom_fields.as_ref().is_some_and(|cfields| {
                 !cfields
                     .iter()
+                    // only check for empty fields for supported custom field types
+                    .filter(|f| {
+                        custom_fields
+                            .iter()
+                            .map(|cf| cf.id)
+                            .find(|id| *id == f.field)
+                            .is_some()
+                    })
                     .filter(|f| f.value.is_none())
                     .collect::<Vec<_>>()
                     .is_empty()
@@ -186,13 +201,21 @@ async fn main() {
 
     eprintln!("{docs_with_empty_custom_fields:#?}");
 
-    for cf in custom_fields {
+    for cf in &custom_fields {
         let docs_to_process = docs_with_empty_custom_fields
             .iter_mut()
             .filter(|doc| {
                 doc.custom_fields.as_ref().is_some_and(|doc_cf| {
                     !doc_cf
                         .iter()
+                        // only check for empty fields for supported custom field types
+                        .filter(|f| {
+                            custom_fields
+                                .iter()
+                                .map(|cf| cf.id)
+                                .find(|id| *id == f.field)
+                                .is_some()
+                        })
                         .filter(|cf_instance| {
                             cf_instance.field == cf.id && cf_instance.value.is_none()
                         })
@@ -256,13 +279,25 @@ async fn main() {
                         });
                     }
                     // if all custom fields have been filled then updated tag to indicate finished status
-                    if doc.custom_fields.as_ref().is_some_and(|custom_fields| {
-                        custom_fields
-                            .iter()
-                            .filter(|cf| cf.value.is_none()) // if there are any custom fields with empty values
-                            .next() // then processing for this document has not finished
-                            .is_none()
-                    }) {
+                    if doc
+                        .custom_fields
+                        .as_ref()
+                        .is_some_and(|custom_fields_instances| {
+                            custom_fields_instances
+                                .iter()
+                                // only check for empty fields for supported custom field types
+                                .filter(|f| {
+                                    custom_fields
+                                        .iter()
+                                        .map(|cf| cf.id)
+                                        .find(|id| *id == f.field)
+                                        .is_some()
+                                })
+                                .filter(|cf| cf.value.is_none()) // if there are any custom fields with empty values
+                                .next() // then processing for this document has not finished
+                                .is_none()
+                        })
+                    {
                         let mut current_doc_tags = tags
                             .iter()
                             .filter(|tag| doc.tags.contains(&tag.id))
