@@ -22,4 +22,5 @@ toml = "0.9.8"
 [features]
 vulkan = [ "llama-cpp-2/vulkan" ]
 native = [ "llama-cpp-2/native" ]
-
+openmp = [ "llama-cpp-2/openmp" ]
+cuda = [ "llama-cpp-2/cuda" ]
