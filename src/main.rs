@@ -10,6 +10,12 @@ mod extract;
 mod requests;
 mod types;
 
+#[cfg(all(feature = "vulkan", feature = "native"))]
+compile_error!("Only one compute backend can be used, choose feature `vulkan` or `native`!");
+
+#[cfg(not(any(feature = "vulkan", feature = "native")))]
+compile_error!("Choose feature `vulkan` or `native` to select what compute backend should be used for inference!");
+
 #[tokio::main]
 async fn main() {
     colog::init();
@@ -199,7 +205,7 @@ async fn main() {
             });
     }
 
-    eprintln!("{docs_with_empty_custom_fields:#?}");
+    //eprintln!("{docs_with_empty_custom_fields:#?}");
 
     for cf in &custom_fields {
         let docs_to_process = docs_with_empty_custom_fields
@@ -256,27 +262,27 @@ async fn main() {
                             .map(|cf| cf.clone())
                             .collect::<Vec<_>>();
                         // send extracted custom field to server and update document
-                        let _ = requests::update_document_custom_fields(
-                            &mut api_client,
-                            doc,
-                            updated_custom_fields.as_slice(),
-                        )
-                        .await
-                        .map(|_| {
-                            log::info!(
-                                "Updated custom field {} for document with id {}",
-                                cf.name,
-                                doc.id
-                            );
-                        })
-                        .map_err(|err| {
-                            log::error!(
-                                "Error updating custom field {} on document with id {}! \n {err}",
-                                cf.name,
-                                doc.id
-                            );
-                            err
-                        });
+                        //let _ = requests::update_document_custom_fields(
+                            //&mut api_client,
+                            //doc,
+                            //updated_custom_fields.as_slice(),
+                        //)
+                        //.await
+                        //.map(|_| {
+                            //log::info!(
+                                //"Updated custom field {} for document with id {}",
+                                //cf.name,
+                                //doc.id
+                            //);
+                        //})
+                        //.map_err(|err| {
+                            //log::error!(
+                                //"Error updating custom field {} on document with id {}! \n {err}",
+                                //cf.name,
+                                //doc.id
+                            //);
+                            //err
+                        //});
                     }
                     // if all custom fields have been filled then updated tag to indicate finished status
                     if doc

@@ -4,6 +4,7 @@ use serde::Deserialize;
 use thiserror::Error;
 
 pub(crate) struct Config {
+    pub(crate) paperless_server: String,
     pub(crate) processing_tag: String,
     pub(crate) processing_color: String,
     pub(crate) finished_tag: String,
@@ -15,6 +16,7 @@ pub(crate) struct Config {
 
 #[derive(Deserialize, Default)]
 pub(crate) struct OverlayConfig {
+    pub(crate) paperless_server: Option<String>,
     pub(crate) processing_tag: Option<String>,
     pub(crate) processing_color: Option<String>,
     pub(crate) finished_tag: Option<String>,
@@ -35,6 +37,7 @@ enum OverlayConfigError {
 impl Config {
     pub fn new<S: ToString>(processing_tag: S, finished_tag: S, tag_user: S, model: S) -> Self {
         Self {
+            paperless_server: "https://example-paperless.domain".to_string(),
             processing_tag: processing_tag.to_string(),
             processing_color: "#ffe000".to_string(),
             finished_tag: finished_tag.to_string(),
@@ -45,8 +48,9 @@ impl Config {
         }
     }
 
-    pub fn overlay_config(mut self, overlay_config: OverlayConfig) -> Self {
+    pub fn overlay_config(self, overlay_config: OverlayConfig) -> Self {
         Self {
+            paperless_server: overlay_config.paperless_server.unwrap_or(self.paperless_server),
             processing_tag: overlay_config.processing_tag.unwrap_or(self.processing_tag),
             processing_color: overlay_config
                 .processing_color
