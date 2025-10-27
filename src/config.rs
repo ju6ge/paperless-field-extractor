@@ -50,7 +50,9 @@ impl Config {
 
     pub fn overlay_config(self, overlay_config: OverlayConfig) -> Self {
         Self {
-            paperless_server: overlay_config.paperless_server.unwrap_or(self.paperless_server),
+            paperless_server: overlay_config
+                .paperless_server
+                .unwrap_or(self.paperless_server),
             processing_tag: overlay_config.processing_tag.unwrap_or(self.processing_tag),
             processing_color: overlay_config
                 .processing_color
@@ -80,6 +82,21 @@ impl OverlayConfig {
                 log::error!("{err} … using default configuration");
                 Self::default()
             }
+        }
+    }
+
+    pub(crate) fn read_from_env() -> OverlayConfig {
+        OverlayConfig {
+            paperless_server: std::env::var("PAPERLESS_SERVER").ok(),
+            processing_tag: std::env::var("PROCESSING_TAG_NAME").ok(),
+            processing_color: std::env::var("PROCESSING_TAG_COLOR").ok(),
+            finished_tag: std::env::var("FINISHED_TAG_NAME").ok(),
+            finished_color: std::env::var("FINSHED_TAG_COLOR").ok(),
+            tag_user_name: std::env::var("PAPERLESS_USER").ok(),
+            model: std::env::var("GGUF_MODEL_PATH").ok(),
+            num_gpu_layers: std::env::var("NUM_GPU_LAYERS")
+                .ok()
+                .and_then(|num| num.parse().ok()),
         }
     }
 }

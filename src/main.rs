@@ -37,7 +37,8 @@ async fn main() {
     colog::init();
 
     let config = Config::default()
-        .overlay_config(OverlayConfig::read_config_toml(Path::new("./config.toml")));
+        .overlay_config(OverlayConfig::read_config_toml(Path::new("/etc/paperless-field-extractor/config.toml")))
+        .overlay_config(OverlayConfig::read_from_env());
 
     let model_path = Path::new(&config.model)
         .canonicalize()
