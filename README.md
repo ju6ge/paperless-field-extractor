@@ -19,6 +19,19 @@ variants. While document_date uses a complex regex + neural net approach. This i
    - First all documents are scannend for unfilled custom fields and a given a processing tag, to indicate to the user that the document is being worked on
    - Uses a locally running language model to predict the value of the custom field from the document data
    - Upload filled custom fields to the corresponding document and set a finished tag to inform the user that all document processing has finished
+   
+# Supported Custom Field Types
+
+Currently this projects predicting the following kinds of custom fields:
+- [x] Boolean
+- [x] Date
+- [x] Integer
+- [x] Number
+- [x] Monetary
+- [x] Text
+- [x] Select
+- [ ] Document Link
+- [ ] URL
 
 # Under the Hood
 
@@ -26,9 +39,71 @@ Under the hood this software is running `llama.cpp` as an inference engine to pr
 with `cuda`, `vulkan`, `openmp` or `native` excelleration.
 As a base model this software is using a quantized version of Qwen3 to reduce the resource requirements and enable running this even with limited resources.
 
+# Configuration
+
+Configuration of the software is possible via a configuration file at `/etc/paperless-field-extractor/config.toml` or via environment variables. Environment variables can be used to overwrite values from the configuration file.
+
+Apart from configuration an API Token is required to enable communication with the paperless API! This token should be made availible via the `PAPERLESS_API_CLIENT_API_TOKEN` environment variable!!!
+
+This file shows the default configuration and explains the options:
+``` toml
+# corresponding env var `PAPERLESS_SERVER`, defines were the paperless instnace is reachable
+paperless_server = "https://example-paperless.domain",
+# corresponding env var `GGUF_MODEL_PATH`, defines where the gguf model file is located
+model = "/usr/share/paperless-field-extractor/model.gguf",
+# corresponding env var `NUM_GPU_LAYERS`, sets llama cpp option num_cpu_layers when initializing the inference backend zero here means unlimited
+num_gpu_layers = 0,
+
+# corresponding env var `PROCESSING_TAG_NAME`, display name of the tag that is show when a document is being processed
+processing_tag = "🧠 processing",
+# corresponding env var `PROCESSING_TAG_COLOR`, display color of the tag that is show when a document is being processed
+processing_color = "#ffe000",
+# corresponding env var `FINISHED_TAG_NAME`, display name of the tag that is show when a document has been fully processed
+finished_tag = "🏷️ finished",
+# corresponding env var `FINISHED_TAG_COLOR`, display color of the tag that is show when a document has been fully processed
+finished_color = "#40aebf",
+# corresponding env var `PAPERLESS_USER`, default user to use when creating processing and finshed tags on inital connection
+tag_user_name = "user",
+```
+
 # Setup
 
-# Configuration
+If you just want to run this software for your own instance using a containerized approach is recommended. 
+
+# Containerized Approach
+
+The default container is setup to include a model already and with some environment variables should be fully functional:
+
+``` sh
+<podman/docker> run -it --rm \
+    -e PAPERLESS_API_CLIENT_API_TOKEN=<token>
+    -e PAPERLESS_SERVER=<paperless_ngx_url>
+    ghcr.io/…/paperless-field-extractor:<version>-<backend>
+```
+
+Currently only the `vulkan` backend has a prebuild container availible, it should be fine for most deployments even without a graphics processor availible.
+
+
+# Build from Source
+
+For development or advanced users manual compilation and setup may be desired.
+
+Successfull building requires selecting a compute backend via feature flag:
+
+``` sh
+cargo build --release -F <backend>
+```
+
+You can select from the following backends:
+- native (CPU)
+- openmp (CPU)
+- cuda (GPU)
+- vulkan (CPU + GPU)
+
+Depending on your selection you will need to have the corresponding system libraries installed on your device, with development headers included.
+
+Afterward building you can setup a config file at `/etc/paperless-field-extractor/config.toml` and run the software. 
+You will need to download a model gguf yourself and configure the `GGUF_MODEL_PATH` environment variable or `model` config option to point to its location!
 
 # LICENSE
 
