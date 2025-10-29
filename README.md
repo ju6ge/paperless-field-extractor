@@ -48,22 +48,22 @@ Apart from configuration an API Token is required to enable communication with t
 This file shows the default configuration and explains the options:
 ``` toml
 # corresponding env var `PAPERLESS_SERVER`, defines were the paperless instnace is reachable
-paperless_server = "https://example-paperless.domain",
+paperless_server = "https://example-paperless.domain"
 # corresponding env var `GGUF_MODEL_PATH`, defines where the gguf model file is located
-model = "/usr/share/paperless-field-extractor/model.gguf",
+model = "/usr/share/paperless-field-extractor/model.gguf"
 # corresponding env var `NUM_GPU_LAYERS`, sets llama cpp option num_cpu_layers when initializing the inference backend zero here means unlimited
-num_gpu_layers = 0,
+num_gpu_layers = 0
 
 # corresponding env var `PROCESSING_TAG_NAME`, display name of the tag that is show when a document is being processed
-processing_tag = "🧠 processing",
+processing_tag = "🧠 processing"
 # corresponding env var `PROCESSING_TAG_COLOR`, display color of the tag that is show when a document is being processed
-processing_color = "#ffe000",
+processing_color = "#ffe000"
 # corresponding env var `FINISHED_TAG_NAME`, display name of the tag that is show when a document has been fully processed
-finished_tag = "🏷️ finished",
+finished_tag = "🏷️ finished"
 # corresponding env var `FINISHED_TAG_COLOR`, display color of the tag that is show when a document has been fully processed
-finished_color = "#40aebf",
+finished_color = "#40aebf"
 # corresponding env var `PAPERLESS_USER`, default user to use when creating processing and finshed tags on inital connection
-tag_user_name = "user",
+tag_user_name = "user"
 ```
 
 # Setup
