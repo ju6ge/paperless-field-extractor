@@ -101,6 +101,20 @@ models.
 
 NOTE: The processing and finshed tags will be setup as tags on the server though, since the software assumes requires their existence.
 
+## Building the Container yourself
+
+You can also build the container locally if you prefer. For this the following command will do the trick:
+
+``` sh
+<podman/docker> build \
+    -f distribution/docker/Dockerfile \
+    -t localhost/paperless-field-extractor:vulkan \
+    --build-arg INFERENCE_BACKEND=<backend> \  #this argument is required to select the compute backend, cuda is currenly not supported by the docker build 
+    --build-arg MODEL_URL=<url> \  #optionaly you can point the build process to include a different gguf model by providing a download url
+    --build-arg MODEL_LICENSE_URL=<url> \  #if you change the model, consider including its license in the container build 
+    .
+```
+
 # Build from Source
 
 For development or advanced users manual compilation and setup may be desired.
