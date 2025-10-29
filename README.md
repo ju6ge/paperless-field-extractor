@@ -122,6 +122,12 @@ Depending on your selection you will need to have the corresponding system libra
 Afterward building you can setup a config file at `/etc/paperless-field-extractor/config.toml` and run the software. 
 You will need to download a model gguf yourself and configure the `GGUF_MODEL_PATH` environment variable or `model` config option to point to its location!
 
+# Future Work
+
+Depending on interesent and request the following future updates may come:
+- Contious Serving, using Webhooks to automatically trigger custom field extraction instead of requiring a timer setup
+- Automated Finetuning using LoRa on existing corpus of documents
+
 # LICENSE
 
 This software is licensed under the AGPL-3.0
