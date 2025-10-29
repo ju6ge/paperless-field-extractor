@@ -78,7 +78,7 @@ The default container is setup to include a model already and with some environm
 <podman/docker> run -it --rm \
     -e PAPERLESS_API_CLIENT_API_TOKEN=<token>
     -e PAPERLESS_SERVER=<paperless_ngx_url>
-    ghcr.io/…/paperless-field-extractor:<version>-<backend>
+    ghcr.io/ju6ge/paperless-field-extractor:<version>-<backend>
 ```
 
 Currently only the `vulkan` backend has a prebuild container availible, it should be fine for most deployments even without a graphics processor availible.
@@ -93,7 +93,7 @@ If you wish to check how this would look for your documents with unfilled custom
 <podman/docker> run -it --rm \
     -e PAPERLESS_API_CLIENT_API_TOKEN=<token>
     -e PAPERLESS_SERVER=<paperless_ngx_url>
-    ghcr.io/…/paperless-field-extractor:<version>-<backend> --dry-run
+    ghcr.io/ju6ge/paperless-field-extractor:<version>-<backend> --dry-run
 ```
 
 This will run the inference printing the results to the terminal, but without setting add tags to documents or sending the extracted fields back to paperless. This mode is also useful for evaluing differnt
