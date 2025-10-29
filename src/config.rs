@@ -106,7 +106,7 @@ impl Default for Config {
         Self::new(
             "🧠 processing",
             "🏷️ finished",
-            "judge",
+            "user",
             "/usr/share/paperless-field-extractor/model.gguf",
         )
     }
