@@ -70,7 +70,7 @@ tag_user_name = "user",
 
 If you just want to run this software for your own instance using a containerized approach is recommended. 
 
-# Containerized Approach
+## Containerized Approach
 
 The default container is setup to include a model already and with some environment variables should be fully functional:
 
@@ -83,6 +83,23 @@ The default container is setup to include a model already and with some environm
 
 Currently only the `vulkan` backend has a prebuild container availible, it should be fine for most deployments even without a graphics processor availible.
 
+The easiest way to have this run in the background is to configure a cron job or systemd-timer to regularly run the software regularly checking for new documents with unfilled custom fields.
+
+## Dry Run for Testing
+
+If you wish to check how this would look for your documents with unfilled custom fields you can use the dry-run mode.
+
+``` sh
+<podman/docker> run -it --rm \
+    -e PAPERLESS_API_CLIENT_API_TOKEN=<token>
+    -e PAPERLESS_SERVER=<paperless_ngx_url>
+    ghcr.io/…/paperless-field-extractor:<version>-<backend> --dry-run
+```
+
+This will run the inference printing the results to the terminal, but without setting add tags to documents or sending the extracted fields back to paperless. This mode is also useful for evaluing differnt
+models.
+
+NOTE: The processing and finshed tags will be setup as tags on the server though, since the software assumes requires their existence.
 
 # Build from Source
 
