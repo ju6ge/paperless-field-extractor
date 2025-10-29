@@ -1,5 +1,6 @@
 use std::{path::Path, process::exit};
 
+use clap::Parser;
 use config::{Config, OverlayConfig};
 use extract::CustomFieldModelExtractor;
 use paperless_api_client::Client;
@@ -32,12 +33,22 @@ compile_error!(
     "Choose feature `vulkan`, `openmp`, `cuda` or `native` to select what compute backend should be used for inference!"
 );
 
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    #[clap(long, default_value_t = false, action)]
+    dry_run: bool,
+}
+
 #[tokio::main]
 async fn main() {
+    let args = Args::parse();
     colog::init();
 
     let config = Config::default()
-        .overlay_config(OverlayConfig::read_config_toml(Path::new("/etc/paperless-field-extractor/config.toml")))
+        .overlay_config(OverlayConfig::read_config_toml(Path::new(
+            "/etc/paperless-field-extractor/config.toml",
+        )))
         .overlay_config(OverlayConfig::read_from_env());
 
     let model_path = Path::new(&config.model)
@@ -79,6 +90,9 @@ async fn main() {
             None
         });
 
+    if !args.dry_run {
+        
+    }
     //make sure tags for processing and finshed exists
     let processing_tag = if tags
         .iter()
@@ -203,7 +217,7 @@ async fn main() {
             .iter()
             .filter(|t| t.id == processing_tag.id)
             .next()
-            .is_some()
+            .is_some() || args.dry_run // do not set any tags when doing a dry run!
         {
             continue;
         }
@@ -262,7 +276,7 @@ async fn main() {
                 &field_grammar,
             );
             for doc in docs_to_process {
-                let extracted_custom_field_data = model_extractor.extract(doc);
+                let extracted_custom_field_data = model_extractor.extract(doc, args.dry_run);
                 if let Ok(cf_inst) = extracted_custom_field_data.to_custom_field_instance(&cf) {
                     // need to get at the custom field list with the following if let
                     // since we are only processing documnts with custom fields this will always be some
@@ -279,27 +293,29 @@ async fn main() {
                             .map(|cf| cf.clone())
                             .collect::<Vec<_>>();
                         // send extracted custom field to server and update document
-                        //let _ = requests::update_document_custom_fields(
-                        //&mut api_client,
-                        //doc,
-                        //updated_custom_fields.as_slice(),
-                        //)
-                        //.await
-                        //.map(|_| {
-                        //log::info!(
-                        //"Updated custom field {} for document with id {}",
-                        //cf.name,
-                        //doc.id
-                        //);
-                        //})
-                        //.map_err(|err| {
-                        //log::error!(
-                        //"Error updating custom field {} on document with id {}! \n {err}",
-                        //cf.name,
-                        //doc.id
-                        //);
-                        //err
-                        //});
+                        if !args.dry_run {
+                            let _ = requests::update_document_custom_fields(
+                                &mut api_client,
+                                doc,
+                                updated_custom_fields.as_slice(),
+                            )
+                            .await
+                            .map(|_| {
+                                log::info!(
+                                    "Updated custom field {} for document with id {}",
+                                    cf.name,
+                                    doc.id
+                                );
+                            })
+                            .map_err(|err| {
+                                log::error!(
+                                    "Error updating custom field {} on document with id {}! \n {err}",
+                                    cf.name,
+                                    doc.id
+                                );
+                                err
+                            });
+                        }
                     }
                     // if all custom fields have been filled then updated tag to indicate finished status
                     if doc
