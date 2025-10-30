@@ -93,7 +93,7 @@ impl FieldExtract {
                     serde_json::from_value(self.field_value.clone())?;
                 Ok(CustomFieldInstance {
                     value: Some(Value::String(format!(
-                        "{}{}",
+                        "{}{:.2}",
                         parsed_currency_value.currency_code, parsed_currency_value.value
                     ))),
                     field: custom_field_spec.id,
