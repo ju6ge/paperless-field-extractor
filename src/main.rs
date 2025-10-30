@@ -62,7 +62,7 @@ async fn main() {
         .unwrap();
 
     let mut api_client = Client::new_from_env();
-    api_client.set_base_url("https://judge-paperless.16.wlandt.de");
+    api_client.set_base_url(config.paperless_server);
 
     let custom_fields = requests::get_all_custom_fields(&mut api_client)
         .await
