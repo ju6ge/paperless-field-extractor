@@ -335,7 +335,7 @@ async fn main() {
                                 .filter(|cf| cf.value.is_none()) // if there are any custom fields with empty values
                                 .next() // then processing for this document has not finished
                                 .is_none()
-                        })
+                        }) && !args.dry_run
                     {
                         let mut current_doc_tags = tags
                             .iter()
