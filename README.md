@@ -76,8 +76,11 @@ The default container is setup to include a model already and with some environm
 
 ``` sh
 <podman/docker> run -it --rm \
-    -e PAPERLESS_API_CLIENT_API_TOKEN=<token>
-    -e PAPERLESS_SERVER=<paperless_ngx_url>
+    --device /dev/kfd \ # give graphics device access to the container
+    --device /dev/dri \ # give graphics device access to the container
+    -e PAPERLESS_API_CLIENT_API_TOKEN=<token> \
+    -e PAPERLESS_SERVER=<paperless_ngx_url> \
+    -e PAPERLESS_USER=<user> \ # used for tag creation
     ghcr.io/ju6ge/paperless-field-extractor:<version>-<backend>
 ```
 
@@ -91,8 +94,11 @@ If you wish to check how this would look for your documents with unfilled custom
 
 ``` sh
 <podman/docker> run -it --rm \
-    -e PAPERLESS_API_CLIENT_API_TOKEN=<token>
-    -e PAPERLESS_SERVER=<paperless_ngx_url>
+    --device /dev/kfd \ # give graphics device access to the container
+    --device /dev/dri \ # give graphics device access to the container
+    -e PAPERLESS_API_CLIENT_API_TOKEN=<token> \
+    -e PAPERLESS_SERVER=<paperless_ngx_url> \ 
+    -e PAPERLESS_USER=<user> \ # used for tag creation
     ghcr.io/ju6ge/paperless-field-extractor:<version>-<backend> --dry-run
 ```
 
