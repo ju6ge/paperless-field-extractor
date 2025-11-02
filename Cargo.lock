@@ -556,8 +556,7 @@ dependencies = [
 [[package]]
 name = "gbnf"
 version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af625580908ec98d3b6f4878aa75326a085990dd075bd34731ed97cfb1b294fe"
+source = "git+https://github.com/ju6ge/gbnf?branch=feature%2Fconst-array-support#58e62dac921061fd9b3dc3e400551ef70cb85ec4"
 dependencies = [
  "serde",
  "serde_json",

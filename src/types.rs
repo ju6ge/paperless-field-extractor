@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 use paperless_api_client::types::{CustomField, CustomFieldInstance, DataTypeEnum};
-use schemars::{JsonSchema, json_schema, schema_for};
+use schemars::{JsonSchema, json_schema, schema_for, schema_for_value};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -18,6 +18,13 @@ pub(crate) struct FieldExtract {
     /// during grammar generation the string will be set to a constant value
     /// with the content being the name of the custom field that is to be extracted
     field_description: String,
+    /// this field may hold extra information to guide the model towards the desired output
+    /// it will be filled with extra information as a constant. For example it will hold
+    /// all allowed variants when expecting a enum as schema for field_value or describe the
+    /// format of a date output. When no extra constraints apply it will be ommitted from
+    /// the grammar.
+    #[serde(default)]
+    field_legend: Option<Value>,
     /// since the custom field can hold any kind of data a generic json value is required to
     /// to hold it. During grammar generation the type of this value will be replaced with
     /// the type of the custom field
@@ -156,6 +163,65 @@ pub(crate) fn custom_field_learning_supported(cf: &CustomField) -> bool {
     }
 }
 
+#[derive(Debug)]
+struct GuideDef {
+    name: String,
+    value: Value,
+}
+
+// Some custom fields require some extra guidance for the model to be able to
+// produce sensible output. The guide fields purpose is to contrain the probability
+// space further. This function handles creation of this guide based on the custom
+// fields definition.
+pub(crate) fn guide_value_from_custom_field(cf: &CustomField) -> Option<GuideDef> {
+    match cf.data_type {
+        DataTypeEnum::String
+        | DataTypeEnum::Boolean
+        | DataTypeEnum::Integer
+        | DataTypeEnum::Float
+        | DataTypeEnum::Monetary => {
+            // base types where constraining apart
+            // from using the custom field name
+            // is not possible
+            None
+        }
+        DataTypeEnum::Date => {
+            // expect the date as rfc3339 format
+            Some(GuideDef {
+                name: "format".to_string(),
+                value: json!("rfc3339"),
+            })
+        }
+        DataTypeEnum::Select => {
+            let select_options: FieldSelect = if let Some(v) = &cf.extra_data {
+                serde_json::from_value(v.clone()).unwrap()
+            } else {
+                // this case should not occur because it means the custom field has
+                // no allowed variants …
+                return None;
+            };
+            let enum_values = serde_json::to_value(
+                &select_options
+                    .select_options
+                    .into_iter()
+                    .map(|o| o.label)
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+            // expect value to be one of the allowed variants
+            Some(GuideDef {
+                name: "one_of".to_string(),
+                value: enum_values,
+            })
+        }
+        DataTypeEnum::Url | DataTypeEnum::Documentlink => {
+            // currently unsupported custom fields
+            // will probably require some guidance when implemented
+            None
+        }
+    }
+}
+
 pub(crate) fn schema_from_custom_field(cf: &CustomField) -> Option<schemars::Schema> {
     let mut base_schema = schema_for!(FieldExtract);
     // set field of description schema as a constant string value matching the name
@@ -200,6 +266,30 @@ pub(crate) fn schema_from_custom_field(cf: &CustomField) -> Option<schemars::Sch
             return None;
         }
     };
+    if let Some(guide_value) = guide_value_from_custom_field(&cf) {
+        base_schema.get_mut("properties").map(|properties| {
+            properties.get_mut("field_legend").map(|legend_schema| {
+                *legend_schema = json_schema!({
+                    "type": "object",
+                    "properties": {
+                        guide_value.name.clone(): { "const": guide_value.value }
+                    },
+                    "required": [
+                        guide_value.name
+                    ]
+                })
+                .as_value()
+                .clone();
+            })
+        });
+    } else {
+        // remove field_legend from schema
+        base_schema.get_mut("properties").map(|properties| {
+            if let Some(prop) = properties.as_object_mut() {
+                prop.remove("field_legend");
+            }
+        });
+    }
     // set the schema of the field value according to the type of custom field
     base_schema.get_mut("properties").map(|properties| {
         properties
