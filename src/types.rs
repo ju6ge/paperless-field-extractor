@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 use paperless_api_client::types::{CustomField, CustomFieldInstance, DataTypeEnum};
-use schemars::{JsonSchema, json_schema, schema_for, schema_for_value};
+use schemars::{JsonSchema, json_schema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -169,11 +169,11 @@ struct GuideDef {
     value: Value,
 }
 
-// Some custom fields require some extra guidance for the model to be able to
-// produce sensible output. The guide fields purpose is to contrain the probability
-// space further. This function handles creation of this guide based on the custom
-// fields definition.
-pub(crate) fn guide_value_from_custom_field(cf: &CustomField) -> Option<GuideDef> {
+/// Some custom fields require some extra guidance for the model to be able to
+/// produce sensible output. The guide fields purpose is to contrain the probability
+/// space further. This function handles creation of this guide based on the custom
+/// fields definition.
+fn guide_value_from_custom_field(cf: &CustomField) -> Option<GuideDef> {
     match cf.data_type {
         DataTypeEnum::String
         | DataTypeEnum::Boolean

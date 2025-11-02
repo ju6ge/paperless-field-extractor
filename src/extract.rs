@@ -1,4 +1,3 @@
-use chrono::FixedOffset;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
@@ -6,11 +5,9 @@ use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{AddBos, Special};
 use llama_cpp_2::sampling::LlamaSampler;
-use llama_cpp_2::token::LlamaToken;
 use paperless_api_client::types::Document;
-use schemars::{JsonSchema, Schema, schema_for};
+use schemars::Schema;
 use std::io::Write;
-use std::iter::RepeatWith;
 use std::num::NonZeroU32;
 use std::path::Path;
 
@@ -140,7 +137,7 @@ impl CustomFieldModelExtractor {
                     decoder.decode_to_string(&output_bytes, &mut output_string, false);
                 if dry_run {
                     print!("{output_string}");
-                    std::io::stdout().flush();
+                    let _ = std::io::stdout().flush();
                 }
                 output.push_str(&output_string);
 

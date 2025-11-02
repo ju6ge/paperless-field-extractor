@@ -3,12 +3,10 @@ use log::{error, info};
 use paperless_api_client::{
     Client,
     types::{
-        CustomField, CustomFieldInstance, CustomFieldInstanceRequest, Document, DocumentRequest,
+        CustomField, CustomFieldInstance, CustomFieldInstanceRequest, Document,
         PatchedDocumentRequest, Tag, TagRequest, User,
     },
 };
-
-use crate::config;
 
 pub async fn get_all_custom_fields(client: &mut Client) -> Vec<CustomField> {
     info!("Requesting Custom Fields from Server");
@@ -234,6 +232,7 @@ pub(crate) async fn create_tag(
         .await
 }
 
+#[allow(deprecated)]
 pub(crate) async fn update_document_tags(
     api_client: &mut Client,
     doc: &mut Document,
@@ -264,6 +263,7 @@ pub(crate) async fn update_document_tags(
     Ok(())
 }
 
+#[allow(deprecated)]
 pub(crate) async fn update_document_custom_fields(
     api_client: &mut Client,
     doc: &mut Document,
