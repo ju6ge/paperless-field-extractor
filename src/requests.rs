@@ -1,9 +1,11 @@
 use futures::StreamExt;
 use log::{error, info};
 use paperless_api_client::{
+    Client,
     types::{
-        CustomField, CustomFieldInstance, CustomFieldInstanceRequest, Document, DocumentRequest, PatchedDocumentRequest, Tag, TagRequest, User
-    }, Client
+        CustomField, CustomFieldInstance, CustomFieldInstanceRequest, Document, DocumentRequest,
+        PatchedDocumentRequest, Tag, TagRequest, User,
+    },
 };
 
 use crate::config;
@@ -272,12 +274,15 @@ pub(crate) async fn update_document_custom_fields(
         .partial_update(
             doc.id,
             &PatchedDocumentRequest {
-                custom_fields: Some(custom_fields.iter().map(|cf| {
-                    CustomFieldInstanceRequest {
-                        value: cf.value.clone(),
-                        field: cf.field,
-                    }
-                }).collect()),
+                custom_fields: Some(
+                    custom_fields
+                        .iter()
+                        .map(|cf| CustomFieldInstanceRequest {
+                            value: cf.value.clone(),
+                            field: cf.field,
+                        })
+                        .collect(),
+                ),
                 tags: Default::default(),
                 correspondent: Default::default(),
                 document_type: Default::default(),

@@ -90,9 +90,7 @@ async fn main() {
             None
         });
 
-    if !args.dry_run {
-        
-    }
+    if !args.dry_run {}
     //make sure tags for processing and finshed exists
     let processing_tag = if tags
         .iter()
@@ -217,7 +215,9 @@ async fn main() {
             .iter()
             .filter(|t| t.id == processing_tag.id)
             .next()
-            .is_some() || args.dry_run // do not set any tags when doing a dry run!
+            .is_some()
+            || args.dry_run
+        // do not set any tags when doing a dry run!
         {
             continue;
         }
@@ -335,7 +335,8 @@ async fn main() {
                                 .filter(|cf| cf.value.is_none()) // if there are any custom fields with empty values
                                 .next() // then processing for this document has not finished
                                 .is_none()
-                        }) && !args.dry_run
+                        })
+                        && !args.dry_run
                     {
                         let mut current_doc_tags = tags
                             .iter()
