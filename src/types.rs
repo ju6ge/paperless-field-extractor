@@ -29,14 +29,14 @@ pub(crate) struct FieldExtract {
     /// to hold it. During grammar generation the type of this value will be replaced with
     /// the type of the custom field
     field_value: Value,
-    /// as with `field_value` the element type will be replaced during grammar generation
-    /// to correspond to the type of the custom field. This field currently does not really
-    /// do much, the idea would be to use it in training for reward models if output the correct field
-    /// here although it might have put the wrong value in the actual value field. Not sure if this makes
-    /// sense though. Another idea would be to add these as suggestions to paperless, but for that to work
-    /// custom field suggestions would need to be implemented for paperless first. I don't think they are
-    /// at the moment
-    alternative_values: Vec<Value>,
+    // as with `field_value` the element type will be replaced during grammar generation
+    // to correspond to the type of the custom field. This field currently does not really
+    // do much, the idea would be to use it in training for reward models if output the correct field
+    // here although it might have put the wrong value in the actual value field. Not sure if this makes
+    // sense though. Another idea would be to add these as suggestions to paperless, but for that to work
+    // custom field suggestions would need to be implemented for paperless first. I don't think they are
+    // at the moment
+    //alternative_values: Vec<Value>,
 }
 
 #[derive(Debug, Error)]
