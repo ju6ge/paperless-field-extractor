@@ -317,50 +317,50 @@ async fn main() {
                             });
                         }
                     }
-                    // if all custom fields have been filled then updated tag to indicate finished status
-                    if doc
-                        .custom_fields
-                        .as_ref()
-                        .is_some_and(|custom_fields_instances| {
-                            custom_fields_instances
-                                .iter()
-                                // only check for empty fields for supported custom field types
-                                .filter(|f| {
-                                    custom_fields
-                                        .iter()
-                                        .map(|cf| cf.id)
-                                        .find(|id| *id == f.field)
-                                        .is_some()
-                                })
-                                .filter(|cf| cf.value.is_none()) // if there are any custom fields with empty values
-                                .next() // then processing for this document has not finished
-                                .is_none()
-                        })
-                        && !args.dry_run
-                    {
-                        let mut current_doc_tags = tags
+                }
+                // if all custom fields have been filled then updated tag to indicate finished status
+                if doc
+                    .custom_fields
+                    .as_ref()
+                    .is_some_and(|custom_fields_instances| {
+                        custom_fields_instances
                             .iter()
-                            .filter(|tag| doc.tags.contains(&tag.id))
-                            .filter(|tag| tag.name != config.processing_tag) // remove processing tag from document
-                            .collect::<Vec<_>>();
-                        current_doc_tags.push(&finished_tag);
-                        let _ =
-                            requests::update_document_tags(&mut api_client, doc, &current_doc_tags)
-                                .await
-                                .map(|_| {
-                                    log::debug!(
-                                        "Added finished tag to document with id {}",
-                                        doc.id
-                                    );
-                                })
-                                .map_err(|err| {
-                                    log::warn!(
-                                        "Could not add finished tag to document with id {}: {err}",
-                                        doc.id
-                                    );
-                                    err
-                                });
-                    }
+                            // only check for empty fields for supported custom field types
+                            .filter(|f| {
+                                custom_fields
+                                    .iter()
+                                    .map(|cf| cf.id)
+                                    .find(|id| *id == f.field)
+                                    .is_some()
+                            })
+                            .filter(|cf| cf.value.is_none()) // if there are any custom fields with empty values
+                            .next() // then processing for this document has not finished
+                            .is_none()
+                    })
+                    && !args.dry_run
+                {
+                    let mut current_doc_tags = tags
+                        .iter()
+                        .filter(|tag| doc.tags.contains(&tag.id))
+                        .filter(|tag| tag.name != config.processing_tag) // remove processing tag from document
+                        .collect::<Vec<_>>();
+                    current_doc_tags.push(&finished_tag);
+                    let _ =
+                        requests::update_document_tags(&mut api_client, doc, &current_doc_tags)
+                            .await
+                            .map(|_| {
+                                log::debug!(
+                                    "Added finished tag to document with id {}",
+                                    doc.id
+                                );
+                            })
+                            .map_err(|err| {
+                                log::warn!(
+                                    "Could not add finished tag to document with id {}: {err}",
+                                    doc.id
+                                );
+                                err
+                            });
                 }
             }
         }
