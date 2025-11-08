@@ -1,5 +1,5 @@
 use chrono::NaiveDate;
-use paperless_api_client::types::{CustomField, CustomFieldInstance, DataTypeEnum};
+use paperless_api_client::types::{Correspondent, CustomField, CustomFieldInstance, DataTypeEnum};
 use schemars::{JsonSchema, json_schema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -220,6 +220,52 @@ fn guide_value_from_custom_field(cf: &CustomField) -> Option<GuideDef> {
             None
         }
     }
+}
+
+pub(crate) fn schema_from_correspondents(crrspd_list: &[&Correspondent]) -> schemars::Schema {
+    let correspondend_name_list: Vec<Value> = crrspd_list
+        .iter()
+        .map(|crrspd| json!(crrspd.name))
+        .collect();
+
+    let type_allowed_correspondens = json_schema!({
+        "type": "string",
+        "enum": correspondend_name_list
+    });
+
+    let mut base_schema = schema_for!(FieldExtract);
+    base_schema.get_mut("properties").map(|properties| {
+        properties
+            .get_mut("field_description")
+            .map(|description_schema| {
+                *description_schema = json_schema!({ "const": "Correspondent" })
+                    .as_value()
+                    .clone()
+            });
+        properties.get_mut("field_legend").map(|legend_schema| {
+            *legend_schema = json_schema!({
+                "type": "object",
+                "properties": {
+                    "one_of": { "const": correspondend_name_list }
+                },
+                "required": [
+                    "one_of"
+                ]
+            })
+            .as_value()
+            .clone();
+        });
+        properties
+            .get_mut("field_value")
+            .map(|value_schema| *value_schema = type_allowed_correspondens.as_value().clone());
+        properties.get_mut("alternative_values").map(|array| {
+            array
+                .get_mut("items")
+                .map(|value_schema| *value_schema = type_allowed_correspondens.as_value().clone());
+        });
+        properties
+    });
+    base_schema
 }
 
 pub(crate) fn schema_from_custom_field(cf: &CustomField) -> Option<schemars::Schema> {
