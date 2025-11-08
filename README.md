@@ -54,6 +54,10 @@ model = "/usr/share/paperless-field-extractor/model.gguf"
 # corresponding env var `NUM_GPU_LAYERS`, sets llama cpp option num_cpu_layers when initializing the inference backend zero here means unlimited
 num_gpu_layers = 0
 
+# correspondent suggesting enables the language model to process all inbox documents and add extra suggestions to the correspondet value, this is useful if you have a lot of new document that paperless has not trained for matching yet
+# the corresponding environment var is `CORRESPONDENT_SUGGEST`
+correspondent_suggestions = false
+
 # corresponding env var `PROCESSING_TAG_NAME`, display name of the tag that is show when a document is being processed
 processing_tag = "🧠 processing"
 # corresponding env var `PROCESSING_TAG_COLOR`, display color of the tag that is show when a document is being processed
