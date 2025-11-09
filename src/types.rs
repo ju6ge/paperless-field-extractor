@@ -49,9 +49,24 @@ pub(crate) enum FieldError {
     EmptyEnumValuesForCustomField(String),
     #[error("matching {0} variant does not uniquely match any variant of custom field {1}")]
     NoUniqueEnumValueFound(String, String),
+    #[error("could not match {0} to any known correspondent!")]
+    CorrespondentNotFound(String),
 }
 
 impl FieldExtract {
+    pub fn to_correspondent(
+        &self,
+        all_correspondents: &[Correspondent],
+    ) -> Result<Correspondent, FieldError> {
+        let parsed_value: String = serde_json::from_value(self.value.clone())?;
+
+        all_correspondents
+            .iter()
+            .filter(|c| c.name == parsed_value)
+            .next()
+            .ok_or(FieldError::CorrespondentNotFound(parsed_value))
+            .cloned()
+    }
     pub fn to_custom_field_instance(
         &self,
         custom_field_spec: &CustomField,
@@ -222,7 +237,7 @@ fn guide_value_from_custom_field(cf: &CustomField) -> Option<GuideDef> {
     }
 }
 
-pub(crate) fn schema_from_correspondents(crrspd_list: &[&Correspondent]) -> schemars::Schema {
+pub(crate) fn schema_from_correspondents(crrspd_list: &[Correspondent]) -> schemars::Schema {
     let correspondend_name_list: Vec<Value> = crrspd_list
         .iter()
         .map(|crrspd| json!(crrspd.name))
@@ -252,6 +267,16 @@ pub(crate) fn schema_from_correspondents(crrspd_list: &[&Correspondent]) -> sche
             })
             .as_value()
             .clone();
+        });
+        properties.as_object_mut().map(|prop| {
+            let key_name = "most_likely_value_reasoning_summarized";
+            prop.shift_insert(
+                2,
+                key_name.to_string(),
+                json_schema!({ "type": "string" }).to_value(),
+            );
+            prop.get_mut("required")
+                .map(|required| required.as_array_mut().map(|rv| rv.push(json!(key_name))));
         });
         properties
             .get_mut("value")
