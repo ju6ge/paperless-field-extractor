@@ -5,8 +5,8 @@ use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{AddBos, Special};
 use llama_cpp_2::sampling::LlamaSampler;
-use paperless_api_client::types::Document;
 use schemars::Schema;
+use serde_json::Value;
 use std::io::Write;
 use std::num::NonZeroU32;
 use std::path::Path;
@@ -90,7 +90,7 @@ impl CustomFieldModelExtractor {
         }
     }
 
-    pub fn extract(&mut self, base_data: &Document, dry_run: bool) -> FieldExtract {
+    pub fn extract(&mut self, base_data: &Value, dry_run: bool) -> FieldExtract {
         self.sampler.reset();
         let prompt = format!("{}\n", serde_json::to_string(base_data).unwrap());
         let mut ctx = self
@@ -136,8 +136,11 @@ impl CustomFieldModelExtractor {
                 let _decode_result =
                     decoder.decode_to_string(&output_bytes, &mut output_string, false);
                 if dry_run {
+                    //println!("{output_string}\t\t token_cnt: {n_cur}");
                     print!("{output_string}");
-                    let _ = std::io::stdout().flush();
+                    if n_cur % 100 == 0 {
+                        let _ = std::io::stdout().flush();
+                    }
                 }
                 output.push_str(&output_string);
 

@@ -276,7 +276,8 @@ async fn main() {
                 &field_grammar,
             );
             for doc in docs_to_process {
-                let extracted_custom_field_data = model_extractor.extract(doc, args.dry_run);
+                let extracted_custom_field_data =
+                    model_extractor.extract(&serde_json::to_value(&doc).unwrap(), args.dry_run);
                 if let Ok(cf_inst) = extracted_custom_field_data.to_custom_field_instance(&cf) {
                     // need to get at the custom field list with the following if let
                     // since we are only processing documnts with custom fields this will always be some
@@ -345,22 +346,18 @@ async fn main() {
                         .filter(|tag| tag.name != config.processing_tag) // remove processing tag from document
                         .collect::<Vec<_>>();
                     current_doc_tags.push(&finished_tag);
-                    let _ =
-                        requests::update_document_tags(&mut api_client, doc, &current_doc_tags)
-                            .await
-                            .map(|_| {
-                                log::debug!(
-                                    "Added finished tag to document with id {}",
-                                    doc.id
-                                );
-                            })
-                            .map_err(|err| {
-                                log::warn!(
-                                    "Could not add finished tag to document with id {}: {err}",
-                                    doc.id
-                                );
-                                err
-                            });
+                    let _ = requests::update_document_tags(&mut api_client, doc, &current_doc_tags)
+                        .await
+                        .map(|_| {
+                            log::debug!("Added finished tag to document with id {}", doc.id);
+                        })
+                        .map_err(|err| {
+                            log::warn!(
+                                "Could not add finished tag to document with id {}: {err}",
+                                doc.id
+                            );
+                            err
+                        });
                 }
             }
         }
