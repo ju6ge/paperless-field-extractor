@@ -349,24 +349,27 @@ pub(crate) async fn update_doc_correspondent(
     doc: &Document,
     correspondent: &Correspondent,
 ) -> Result<(), paperless_api_client::types::error::Error> {
-    api_client.documents().partial_update(
-        doc.id,
-        &PatchedDocumentRequest {
-            correspondent: Some(correspondent.id),
-            document_type: Default::default(),
-            storage_path: Default::default(),
-            title: Default::default(),
-            content: Default::default(),
-            tags: Default::default(),
-            created: Default::default(),
-            created_date: Default::default(),
-            deleted_at: Default::default(),
-            archive_serial_number: Default::default(),
-            owner: Default::default(),
-            set_permissions: Default::default(),
-            custom_fields: Default::default(),
-            remove_inbox_tags: Default::default(),
-        },
-    ).await?;
+    api_client
+        .documents()
+        .partial_update(
+            doc.id,
+            &PatchedDocumentRequest {
+                correspondent: Some(correspondent.id),
+                document_type: Default::default(),
+                storage_path: Default::default(),
+                title: Default::default(),
+                content: Default::default(),
+                tags: Default::default(),
+                created: Default::default(),
+                created_date: Default::default(),
+                deleted_at: Default::default(),
+                archive_serial_number: Default::default(),
+                owner: Default::default(),
+                set_permissions: Default::default(),
+                custom_fields: Default::default(),
+                remove_inbox_tags: Default::default(),
+            },
+        )
+        .await?;
     Ok(())
 }

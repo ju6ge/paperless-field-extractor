@@ -7,10 +7,10 @@ use llama_cpp_2::model::{AddBos, Special};
 use llama_cpp_2::sampling::LlamaSampler;
 use schemars::Schema;
 use serde_json::Value;
-use thiserror::Error;
 use std::io::Write;
 use std::num::NonZeroU32;
 use std::path::Path;
+use thiserror::Error;
 
 use gbnf::{self, GrammarItem, NonTerminalSymbol, ProductionItem, RepetitionType, TerminalSymbol};
 
@@ -56,7 +56,7 @@ fn gen_gbnf(schema: &schemars::Schema, eos_token: String) -> String {
 #[derive(Debug, Error)]
 pub(crate) enum ModelError {
     #[error(transparent)]
-    FormatDeserializationError(#[from] serde_json::Error)
+    FormatDeserializationError(#[from] serde_json::Error),
 }
 
 pub(crate) struct CustomFieldModelExtractor {
@@ -68,15 +68,22 @@ pub(crate) struct CustomFieldModelExtractor {
 }
 
 impl CustomFieldModelExtractor {
-    pub fn new(model_path: &Path, num_gpu_layers: usize, response_schema: &Schema, ctx_size_max: Option<u32>) -> Self {
+    pub fn new(
+        model_path: &Path,
+        num_gpu_layers: usize,
+        response_schema: &Schema,
+        ctx_size_max: Option<u32>,
+    ) -> Self {
         let mut backend = LlamaBackend::init().unwrap();
         backend.void_logs();
         let params = LlamaModelParams::default().with_n_gpu_layers(num_gpu_layers as u32);
         let model = LlamaModel::load_from_file(&backend, model_path, &params)
             .expect("unable to load model");
 
-        let ctx_size = ctx_size_max.map(|s| std::cmp::min(s, model.n_ctx_train())).unwrap_or(model.n_ctx_train());
-        
+        let ctx_size = ctx_size_max
+            .map(|s| std::cmp::min(s, model.n_ctx_train()))
+            .unwrap_or(model.n_ctx_train());
+
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(Some(NonZeroU32::new(ctx_size).unwrap()))
             .with_n_batch(ctx_size);
@@ -101,7 +108,11 @@ impl CustomFieldModelExtractor {
         }
     }
 
-    pub fn extract(&mut self, base_data: &Value, dry_run: bool) -> Result<FieldExtract, ModelError> {
+    pub fn extract(
+        &mut self,
+        base_data: &Value,
+        dry_run: bool,
+    ) -> Result<FieldExtract, ModelError> {
         self.sampler.reset();
         let prompt = format!("{}\n", serde_json::to_string(base_data).unwrap());
         let mut ctx = self
