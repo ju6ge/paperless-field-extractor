@@ -4,7 +4,9 @@ use clap::Parser;
 use config::{Config, OverlayConfig};
 use extract::CustomFieldModelExtractor;
 use paperless_api_client::Client;
-use types::{custom_field_learning_supported, schema_from_custom_field};
+use types::{
+    custom_field_learning_supported, schema_from_correspondents, schema_from_custom_field,
+};
 
 mod config;
 mod extract;
@@ -164,8 +166,7 @@ async fn main() {
     let processing_tag = processing_tag.unwrap();
     let finished_tag = finished_tag.unwrap();
 
-    // find document with empty custom fields
-    let mut docs_with_empty_custom_fields = requests::get_all_docs(&mut api_client)
+    let mut all_inbox_docs: Vec<_> = requests::get_all_docs(&mut api_client)
         .await
         .into_iter()
         .filter(|d| {
@@ -185,6 +186,100 @@ async fn main() {
             }
             has_inbox_tag
         })
+        .collect();
+
+    if config.correspondent_suggestions {
+        let crrspndts = requests::fetch_all_correspondents(&mut api_client).await;
+        let crrspndts_suggest_schema = schema_from_correspondents(crrspndts.as_slice());
+
+        let mut model_extractor = CustomFieldModelExtractor::new(
+            model_path.as_path(),
+            config.num_gpu_layers,
+            &crrspndts_suggest_schema,
+            None,
+        );
+
+        for doc in &all_inbox_docs {
+            if args.dry_run {
+                println!(
+                    "================================================================================"
+                );
+                println!(
+                    "Current correspondent {:?}",
+                    crrspndts
+                        .iter()
+                        .filter(|c| doc.correspondent.is_some_and(|cr| c.id == cr))
+                        .map(|c| &c.name)
+                        .next()
+                );
+                println!("========= Content ==========");
+                println!(
+                    "{}",
+                    doc.content
+                        .as_ref()
+                        .map(|s| s.split_at(std::cmp::min(1024, s.len())).0)
+                        .unwrap_or("")
+                );
+            }
+            if let Ok(extracted_correspondent) = model_extractor
+                .extract(&serde_json::to_value(&doc.content).unwrap(), args.dry_run)
+                .map_err(|err| {
+                    log::error!("{err}");
+                    err
+                })
+            {
+                if args.dry_run {
+                    println!(
+                        "Predicted Correspondent: {}",
+                        serde_json::to_string_pretty(&extracted_correspondent.value).unwrap()
+                    );
+                }
+
+                if let Ok(predicted_correspondent) =
+                    extracted_correspondent.to_correspondent(&crrspndts.as_slice())
+                {
+                    if doc
+                        .correspondent
+                        .is_some_and(|dc| dc == predicted_correspondent.id)
+                    {
+                        // predicted correspondent is the same as the one set on the document already, nothing to do
+                        continue;
+                    }
+                    if let Some(doc_suggestions) =
+                        requests::fetch_doc_suggestions(&mut api_client, &doc).await
+                    {
+                        if doc_suggestions
+                            .correspondents
+                            .contains(&predicted_correspondent.id)
+                        {
+                            // predicted correspondent is already present in the other suggestions for the document, nothing to do
+                            continue;
+                        }
+                    }
+                    // only if the document has no correspondent and no suggestion contains the predicted correspondent update
+                    // the correspondent field of the document, sadly directly editing suggestions is not possible via the api
+                    // so here we have to overwrite the correspondent that was predicted previously
+                    if !args.dry_run {
+                        let _ = requests::update_doc_correspondent(
+                            &mut api_client,
+                            &doc,
+                            &predicted_correspondent,
+                        )
+                        .await
+                        .map(|_| log::info!("Updated Correspondet for Document with id {}", doc.id))
+                        .map_err(|err| log::error!("{err}"));
+                    }
+                } else {
+                    // seems the predicted correspondent does not exists, this should be impossible due to grammar
+                    continue;
+                }
+            }
+        }
+    }
+
+    // find document with empty custom fields
+    let mut docs_with_empty_custom_fields = all_inbox_docs
+        .into_iter()
         .filter(|d| {
             d.custom_fields.as_ref().is_some_and(|cfields| {
                 !cfields
