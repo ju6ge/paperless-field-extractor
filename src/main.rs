@@ -274,28 +274,34 @@ async fn main() {
                 model_path.as_path(),
                 config.num_gpu_layers,
                 &field_grammar,
+                None,
             );
             for doc in docs_to_process {
-                let extracted_custom_field_data =
-                    model_extractor.extract(&serde_json::to_value(&doc).unwrap(), args.dry_run);
-                if let Ok(cf_inst) = extracted_custom_field_data.to_custom_field_instance(&cf) {
-                    // need to get at the custom field list with the following if let
-                    // since we are only processing documnts with custom fields this will always be some
-                    // list of custom fields
-                    if let Some(doc_custom_fields) = &mut doc.custom_fields {
-                        let updated_custom_fields = doc_custom_fields
-                            .iter_mut()
-                            .map(|doc_cf| {
-                                if doc_cf.field == cf_inst.field {
-                                    *doc_cf = cf_inst.clone()
-                                }
-                                doc_cf
-                            })
-                            .map(|cf| cf.clone())
-                            .collect::<Vec<_>>();
-                        // send extracted custom field to server and update document
-                        if !args.dry_run {
-                            let _ = requests::update_document_custom_fields(
+                if let Ok(extracted_custom_field_data) = model_extractor
+                    .extract(&serde_json::to_value(&doc).unwrap(), args.dry_run)
+                    .map_err(|err| {
+                        log::error!("{err}");
+                        err
+                    })
+                {
+                    if let Ok(cf_inst) = extracted_custom_field_data.to_custom_field_instance(&cf) {
+                        // need to get at the custom field list with the following if let
+                        // since we are only processing documnts with custom fields this will always be some
+                        // list of custom fields
+                        if let Some(doc_custom_fields) = &mut doc.custom_fields {
+                            let updated_custom_fields = doc_custom_fields
+                                .iter_mut()
+                                .map(|doc_cf| {
+                                    if doc_cf.field == cf_inst.field {
+                                        *doc_cf = cf_inst.clone()
+                                    }
+                                    doc_cf
+                                })
+                                .map(|cf| cf.clone())
+                                .collect::<Vec<_>>();
+                            // send extracted custom field to server and update document
+                            if !args.dry_run {
+                                let _ = requests::update_document_custom_fields(
                                 &mut api_client,
                                 doc,
                                 updated_custom_fields.as_slice(),
@@ -316,6 +322,7 @@ async fn main() {
                                 );
                                 err
                             });
+                            }
                         }
                     }
                 }
