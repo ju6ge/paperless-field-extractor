@@ -17,18 +17,18 @@ pub(crate) struct FieldExtract {
     /// this field is used to guide the model to extract the desired data
     /// during grammar generation the string will be set to a constant value
     /// with the content being the name of the custom field that is to be extracted
-    field_description: String,
+    description: String,
     /// this field may hold extra information to guide the model towards the desired output
     /// it will be filled with extra information as a constant. For example it will hold
     /// all allowed variants when expecting a enum as schema for field_value or describe the
     /// format of a date output. When no extra constraints apply it will be ommitted from
     /// the grammar.
     #[serde(default)]
-    field_legend: Option<Value>,
+    format: Option<Value>,
     /// since the custom field can hold any kind of data a generic json value is required to
     /// to hold it. During grammar generation the type of this value will be replaced with
     /// the type of the custom field
-    field_value: Value,
+    pub value: Value,
     // as with `field_value` the element type will be replaced during grammar generation
     // to correspond to the type of the custom field. This field currently does not really
     // do much, the idea would be to use it in training for reward models if output the correct field
@@ -61,43 +61,43 @@ impl FieldExtract {
         // custom field based via the API
         match custom_field_spec.data_type {
             paperless_api_client::types::DataTypeEnum::Boolean => {
-                let _parsed_value: bool = serde_json::from_value(self.field_value.clone())?;
+                let _parsed_value: bool = serde_json::from_value(self.value.clone())?;
                 Ok(CustomFieldInstance {
-                    value: Some(self.field_value.clone()),
+                    value: Some(self.value.clone()),
                     field: custom_field_spec.id,
                 })
             }
             paperless_api_client::types::DataTypeEnum::String => {
-                let _parsed_value: String = serde_json::from_value(self.field_value.clone())?;
+                let _parsed_value: String = serde_json::from_value(self.value.clone())?;
                 Ok(CustomFieldInstance {
-                    value: Some(self.field_value.clone()),
+                    value: Some(self.value.clone()),
                     field: custom_field_spec.id,
                 })
             }
             paperless_api_client::types::DataTypeEnum::Date => {
-                let _parsed_value: NaiveDate = serde_json::from_value(self.field_value.clone())?;
+                let _parsed_value: NaiveDate = serde_json::from_value(self.value.clone())?;
                 Ok(CustomFieldInstance {
-                    value: Some(self.field_value.clone()),
+                    value: Some(self.value.clone()),
                     field: custom_field_spec.id,
                 })
             }
             paperless_api_client::types::DataTypeEnum::Integer => {
-                let _parsed_value: i64 = serde_json::from_value(self.field_value.clone())?;
+                let _parsed_value: i64 = serde_json::from_value(self.value.clone())?;
                 Ok(CustomFieldInstance {
-                    value: Some(self.field_value.clone()),
+                    value: Some(self.value.clone()),
                     field: custom_field_spec.id,
                 })
             }
             paperless_api_client::types::DataTypeEnum::Float => {
-                let _parsed_value: f64 = serde_json::from_value(self.field_value.clone())?;
+                let _parsed_value: f64 = serde_json::from_value(self.value.clone())?;
                 Ok(CustomFieldInstance {
-                    value: Some(self.field_value.clone()),
+                    value: Some(self.value.clone()),
                     field: custom_field_spec.id,
                 })
             }
             paperless_api_client::types::DataTypeEnum::Monetary => {
                 let parsed_currency_value: CurrencyValue =
-                    serde_json::from_value(self.field_value.clone())?;
+                    serde_json::from_value(self.value.clone())?;
                 Ok(CustomFieldInstance {
                     value: Some(Value::String(format!(
                         "{}{:.2}",
@@ -107,7 +107,7 @@ impl FieldExtract {
                 })
             }
             paperless_api_client::types::DataTypeEnum::Select => {
-                let enum_variant: String = serde_json::from_value(self.field_value.clone())?;
+                let enum_variant: String = serde_json::from_value(self.value.clone())?;
                 let select_options: FieldSelect = if let Some(v) = &custom_field_spec.extra_data {
                     serde_json::from_value(v.clone()).unwrap()
                 } else {
@@ -235,14 +235,12 @@ pub(crate) fn schema_from_correspondents(crrspd_list: &[&Correspondent]) -> sche
 
     let mut base_schema = schema_for!(FieldExtract);
     base_schema.get_mut("properties").map(|properties| {
-        properties
-            .get_mut("field_description")
-            .map(|description_schema| {
-                *description_schema = json_schema!({ "const": "Correspondent" })
-                    .as_value()
-                    .clone()
-            });
-        properties.get_mut("field_legend").map(|legend_schema| {
+        properties.get_mut("description").map(|description_schema| {
+            *description_schema = json_schema!({ "const": "Correspondent" })
+                .as_value()
+                .clone()
+        });
+        properties.get_mut("format").map(|legend_schema| {
             *legend_schema = json_schema!({
                 "type": "object",
                 "properties": {
@@ -256,7 +254,7 @@ pub(crate) fn schema_from_correspondents(crrspd_list: &[&Correspondent]) -> sche
             .clone();
         });
         properties
-            .get_mut("field_value")
+            .get_mut("value")
             .map(|value_schema| *value_schema = type_allowed_correspondens.as_value().clone());
         properties.get_mut("alternative_values").map(|array| {
             array
@@ -274,11 +272,9 @@ pub(crate) fn schema_from_custom_field(cf: &CustomField) -> Option<schemars::Sch
     // of the custom field. This should guide the llm token generation to extract the
     // desired information from the document
     base_schema.get_mut("properties").map(|properties| {
-        properties
-            .get_mut("field_description")
-            .map(|description_schema| {
-                *description_schema = json_schema!({ "const": cf.name }).as_value().clone()
-            });
+        properties.get_mut("description").map(|description_schema| {
+            *description_schema = json_schema!({ "const": cf.name }).as_value().clone()
+        });
         properties
     });
     let field_schema = match cf.data_type {
@@ -314,7 +310,7 @@ pub(crate) fn schema_from_custom_field(cf: &CustomField) -> Option<schemars::Sch
     };
     if let Some(guide_value) = guide_value_from_custom_field(&cf) {
         base_schema.get_mut("properties").map(|properties| {
-            properties.get_mut("field_legend").map(|legend_schema| {
+            properties.get_mut("format").map(|legend_schema| {
                 *legend_schema = json_schema!({
                     "type": "object",
                     "properties": {
@@ -332,14 +328,14 @@ pub(crate) fn schema_from_custom_field(cf: &CustomField) -> Option<schemars::Sch
         // remove field_legend from schema
         base_schema.get_mut("properties").map(|properties| {
             if let Some(prop) = properties.as_object_mut() {
-                prop.remove("field_legend");
+                prop.remove("format");
             }
         });
     }
     // set the schema of the field value according to the type of custom field
     base_schema.get_mut("properties").map(|properties| {
         properties
-            .get_mut("field_value")
+            .get_mut("value")
             .map(|value_schema| *value_schema = field_schema.as_value().clone());
         properties.get_mut("alternative_values").map(|array| {
             array
