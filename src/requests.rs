@@ -1,10 +1,10 @@
-use futures::StreamExt;
+use futures::{StreamExt, TryFutureExt};
 use log::{error, info};
 use paperless_api_client::{
     Client,
     types::{
-        CustomField, CustomFieldInstance, CustomFieldInstanceRequest, Document,
-        PatchedDocumentRequest, Tag, TagRequest, User,
+        Correspondent, CustomField, CustomFieldInstance, CustomFieldInstanceRequest, Document,
+        PatchedDocumentRequest, Suggestions, Tag, TagRequest, User,
     },
 };
 
@@ -299,5 +299,74 @@ pub(crate) async fn update_document_custom_fields(
             },
         )
         .await?;
+    Ok(())
+}
+
+pub(crate) async fn fetch_all_correspondents(api_client: &mut Client) -> Vec<Correspondent> {
+    api_client
+        .correspondents()
+        .list_stream(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        )
+        .filter_map(async |crrspd_req| {
+            crrspd_req
+                .map_err(|err| {
+                    error!("{err}");
+                    err
+                })
+                .ok()
+        })
+        .collect()
+        .await
+}
+
+pub(crate) async fn fetch_doc_suggestions(
+    api_client: &mut Client,
+    doc: &Document,
+) -> Option<Suggestions> {
+    api_client
+        .documents()
+        .suggestions_retrieve(doc.id)
+        .await
+        .map_err(|err| {
+            log::error!("{err}");
+            err
+        })
+        .ok()
+}
+
+#[allow(deprecated)]
+pub(crate) async fn update_doc_correspondent(
+    api_client: &mut Client,
+    doc: &Document,
+    correspondent: &Correspondent,
+) -> Result<(), paperless_api_client::types::error::Error> {
+    api_client.documents().partial_update(
+        doc.id,
+        &PatchedDocumentRequest {
+            correspondent: Some(correspondent.id),
+            document_type: Default::default(),
+            storage_path: Default::default(),
+            title: Default::default(),
+            content: Default::default(),
+            tags: Default::default(),
+            created: Default::default(),
+            created_date: Default::default(),
+            deleted_at: Default::default(),
+            archive_serial_number: Default::default(),
+            owner: Default::default(),
+            set_permissions: Default::default(),
+            custom_fields: Default::default(),
+            remove_inbox_tags: Default::default(),
+        },
+    ).await?;
     Ok(())
 }
