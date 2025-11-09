@@ -78,6 +78,7 @@ impl CustomFieldModelExtractor {
         let grammar = gen_gbnf(response_schema, eos_string.to_string());
         let sampler = LlamaSampler::chain_simple([
             LlamaSampler::grammar(&model, &grammar, "root").unwrap(),
+            LlamaSampler::dry(&model, 5., 1.75, 2, 1024, ["\n", ":", "\"", "*"]),
             LlamaSampler::greedy(),
         ]);
 
@@ -101,7 +102,7 @@ impl CustomFieldModelExtractor {
             .model
             .str_to_token(&prompt, AddBos::Always)
             .unwrap_or_else(|_| panic!("failed to tokenize {prompt}"));
-        let n_len = tokens_list.len() + 1024;
+        let n_len = tokens_list.len() + 4096;
 
         // create a llama_batch with size 512
         // we use this object to submit token data for decoding
