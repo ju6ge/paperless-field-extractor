@@ -3,6 +3,26 @@ paperless-field-extractor
 
 This project is an extension to the excellent [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) software.
 
+# Who is this project for?
+
+This project is for people who want to expand the machine learning capabilities of paperless without sacrificing privacy. The 
+goal is to integrate language model capabilities into paperless seamlessly without yet another chat and prompting interface or 
+complex user interface. This is a standalone project and does not require an extra service to provide model inference everything is baked in already.
+
+If you are looking for document chat or don't care and are fine sending all your private documents to the big cloud providers checkout these projects:
+- [paperless-gpt](https://github.com/icereed/paperless-gpt)
+- [paperless-ai](https://github.com/clusterzx/paperless-ai)
+
+## Under the Hood
+
+Under the hood this software is running `llama.cpp` as an inference engine to provide a local language model without depending on any cloud providers. Depending on the selected feature it is possible to run
+with `cuda`, `vulkan`, `openmp` or `native` acceleration.
+As a base model this software is using a quantized version of `Qwen3` to reduce the resource requirements and enable running this even with limited resources.
+
+Long term I want expand the features to enable fine tuning models to your document corpus. This is where the actual learning would come in.
+
+# Custom Field Value Prediction
+
 In its current form `paperless-ngx` does not support predicting the values of custom fields from the contents of the document. Addressing this is a complicated issue:
 
 - As opposed to the currently predictable values for each document (`correspondent`, `document_date`, `storage_path`, `document_type`) custom fields do not exist for every document! 
@@ -16,7 +36,7 @@ variants. While document_date uses a complex regex + neural net approach. This i
 1. Documents are imported and processed by paperless default document import, assigning document types as usual
 2. Use Paperless workflows to assign unfilled custom fields to the documents based on document_type and correspondent
 3. Use this software to fill in the empty custom fields:
-   - First all documents are scannend for unfilled custom fields and a given a processing tag, to indicate to the user that the document is being worked on
+   - First all documents are scanned for unfilled custom fields and a given a processing tag, to indicate to the user that the document is being worked on
    - Uses a locally running language model to predict the value of the custom field from the document data
    - Upload filled custom fields to the corresponding document and set a finished tag to inform the user that all document processing has finished
    
@@ -32,12 +52,8 @@ Currently this projects predicting the following kinds of custom fields:
 - [x] Select
 - [ ] Document Link
 - [ ] URL
+- [ ] LargeText
 
-# Under the Hood
-
-Under the hood this software is running `llama.cpp` as an inference engine to provide a local language model without depending on any cloud providers. Depending on the selected feature it is possible to run
-with `cuda`, `vulkan`, `openmp` or `native` excelleration.
-As a base model this software is using a quantized version of Qwen3 to reduce the resource requirements and enable running this even with limited resources.
 
 # Configuration
 
@@ -88,7 +104,7 @@ The default container is setup to include a model already and with some environm
     ghcr.io/ju6ge/paperless-field-extractor:<version>-<backend>
 ```
 
-Currently only the `vulkan` backend has a prebuild container availible, it should be fine for most deployments even without a graphics processor availible.
+Currently only the `vulkan` backend has a prebuilt container availible, it should be fine for most deployments even without a graphics processor availible.
 
 The easiest way to have this run in the background is to configure a cron job or systemd-timer to regularly run the software regularly checking for new documents with unfilled custom fields.
 
