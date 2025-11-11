@@ -12,6 +12,7 @@ mod config;
 mod extract;
 mod requests;
 mod types;
+mod server;
 
 #[cfg(any(
     all(feature = "vulkan", feature = "native"),
