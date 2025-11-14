@@ -170,12 +170,21 @@ impl HttpServiceFactory for DocumentProcessingApi {
     }
 }
 
-async fn document_processor(
+async fn document_processor(status_tags: PaperlessStatusTags) {
+    todo!()
+}
+
+/// this function is just here to receive documents for processing from the different api endpoints
+/// all documents received via the channel are put into a linked list of documents that need processing
+/// the reason for this is that this way the document processor can inspect the state of the document queue and
+/// make smart decisions on how to process the documents for maximum efficiency
+async fn document_request_funnel(
     mut processing_request_channel: tokio::sync::mpsc::UnboundedReceiver<DocumentProcessingRequest>,
-    status_tags: PaperlessStatusTags,
 ) {
     while let Some(prc_req) = processing_request_channel.recv().await {
-        println!("Received Request for Document {:#?}", prc_req.document);
+        log::debug!("Received Request for Document {:#?}", prc_req.document.id);
+        let mut doc_queue = PROCESSING_QUEUE.write().await;
+        doc_queue.push_back(prc_req);
     }
 }
 
@@ -198,7 +207,8 @@ pub async fn run_server(
         finished: finished_tag,
     };
 
-    let doc_processor = spawn(document_processor(rx, status_tags.clone()));
+    let doc_processor = spawn(document_processor(status_tags.clone()));
+    let doc_to_process_queue = spawn(document_request_funnel(rx));
     let webhook_server = HttpServer::new(move || {
         let app = App::new()
             .app_data(Data::new(tx.clone()))
@@ -211,7 +221,7 @@ pub async fn run_server(
     .bind(("0.0.0.0", 8123))?
     .run();
 
-    join!(webhook_server, doc_processor);
+    let _ = join!(webhook_server, doc_to_process_queue, doc_processor);
 
     Ok(())
 }
