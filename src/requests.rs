@@ -264,6 +264,37 @@ pub(crate) async fn update_document_tags(
 }
 
 #[allow(deprecated)]
+pub(crate) async fn update_document_tag_ids(
+    api_client: &mut Client,
+    doc: &mut Document,
+    tags: &[i64],
+) -> Result<(), paperless_api_client::types::error::Error> {
+    *doc = api_client
+        .documents()
+        .partial_update(
+            doc.id,
+            &PatchedDocumentRequest {
+                tags: Some(tags.to_vec()),
+                correspondent: Default::default(),
+                document_type: Default::default(),
+                storage_path: Default::default(),
+                title: Default::default(),
+                content: Default::default(),
+                created: Default::default(),
+                created_date: Default::default(),
+                deleted_at: Default::default(),
+                archive_serial_number: Default::default(),
+                owner: Default::default(),
+                set_permissions: Default::default(),
+                custom_fields: Default::default(),
+                remove_inbox_tags: Default::default(),
+            },
+        )
+        .await?;
+    Ok(())
+}
+
+#[allow(deprecated)]
 pub(crate) async fn update_document_custom_fields(
     api_client: &mut Client,
     doc: &mut Document,

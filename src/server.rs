@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc};
 
 use actix_web::{
     App, HttpResponse, HttpResponseBuilder, HttpServer, ResponseError,
@@ -17,9 +17,13 @@ use paperless_api_client::{
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::{join, spawn, task::spawn_blocking};
+use tokio::{join, spawn, sync::RwLock, task::spawn_blocking};
 
 static DOCID_REGEX: Lazy<Regex> = regex_static::lazy_regex!(r"documents/(\d*)");
+
+static PROCESSING_QUEUE: Lazy<tokio::sync::RwLock<VecDeque<DocumentProcessingRequest>>> = Lazy::new(|| {
+    RwLock::new(VecDeque::new())
+});
 
 use crate::{
     config::{self, Config},
@@ -110,8 +114,13 @@ impl WebhookParams {
                 {
                     let mut api_client =
                         Arc::<Client>::make_mut(&mut api_client.into_inner()).clone();
-                    if let Ok(doc) = api_client.documents().retrieve(doc_id, None, None).await {
-                        //TODO update document tags
+                    if let Ok(mut doc) = api_client.documents().retrieve(doc_id, None, None).await {
+                        // if documents has no processing tag set it
+                        if !doc.tags.contains(&status_tags.processing.id) {
+                            let mut updated_doc_tags = doc.tags.clone();
+                            updated_doc_tags.push(status_tags.processing.id);
+                            let _ = requests::update_document_tag_ids(&mut api_client, &mut doc, &updated_doc_tags).await;
+                        }
                         let _ = document_pipeline.send(DocumentProcessingRequest {
                             document: doc,
                             processing_type: req_type,
