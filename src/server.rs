@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, path::Path, sync::Arc};
 
 use actix_web::{
     App, HttpResponse, HttpResponseBuilder, HttpServer, ResponseError,
@@ -9,28 +9,39 @@ use actix_web::{
     post,
     web::{self, Data},
 };
+use clap::error;
 use once_cell::sync::Lazy;
 use paperless_api_client::{
     Client,
-    types::{Document, Tag},
+    types::{CustomField, Document, Tag},
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::{join, spawn, sync::RwLock, task::spawn_blocking};
+use tokio::{
+    join, spawn,
+    sync::{Mutex, RwLock},
+    task::{JoinError, spawn_blocking},
+};
 
 static DOCID_REGEX: Lazy<Regex> = regex_static::lazy_regex!(r"documents/(\d*)");
 
-static PROCESSING_QUEUE: Lazy<tokio::sync::RwLock<VecDeque<DocumentProcessingRequest>>> = Lazy::new(|| {
-    RwLock::new(VecDeque::new())
-});
+static PROCESSING_QUEUE: Lazy<tokio::sync::RwLock<VecDeque<DocumentProcessingRequest>>> =
+    Lazy::new(|| RwLock::new(VecDeque::new()));
+
+// model will only be initialized and stored if there are documents that need processing
+static MODEL_SINGLETON: Lazy<tokio::sync::Mutex<Option<LLModelExtractor>>> =
+    Lazy::new(|| Mutex::new(None));
 
 use crate::{
     config::{self, Config},
+    extract::{LLModelExtractor, ModelError},
     requests,
+    types::custom_field_learning_supported,
 };
 
 #[non_exhaustive]
+#[derive(Debug, PartialEq)]
 enum ProcessingType {
     CustomFieldPrediction,
     CorrespondentSuggest,
@@ -42,6 +53,79 @@ enum ProcessingType {
 struct DocumentProcessingRequest {
     document: Document,
     processing_type: ProcessingType,
+}
+
+#[derive(Debug, Error)]
+enum DocumentProcessingError {
+    #[error("Could not start LLM processinsg thread: {0}")]
+    SpawningProcessingThreadFailed(#[from] JoinError),
+    #[error(transparent)]
+    ModelProcessingError(#[from] ModelError),
+}
+
+async fn handle_correspondend_suggest(
+    doc: &Document,
+    api_client: &mut Client,
+) -> Result<(), DocumentProcessingError> {
+    let crrspndts = requests::fetch_all_correspondents(api_client).await;
+    let crrspndts_suggest_schema = crate::types::schema_from_correspondents(crrspndts.as_slice());
+
+    let doc_data = serde_json::to_value(&doc.content).unwrap();
+
+    let extracted_correspondent = spawn_blocking(move || {
+        let mut model_singleton = MODEL_SINGLETON.blocking_lock();
+        if let Some(model) = model_singleton.as_mut() {
+            model.extract(&doc_data, &crrspndts_suggest_schema, false)
+        } else {
+            Err(crate::extract::ModelError::ModelNotLoaded)
+        }
+    })
+    .await??;
+
+    //TODO send result to paperless instance
+    Ok(())
+}
+
+async fn handle_custom_field_prediction(
+    doc: &Document,
+    api_client: &mut Client,
+) -> Result<(), DocumentProcessingError> {
+    // fetch all custom field definitions for fields on the document that need to be filled
+    let relevant_custom_fields: Vec<CustomField> = requests::get_custom_fields_by_id(
+        api_client,
+        doc.custom_fields.as_ref().map(|cfis| {
+            cfis.iter()
+                .filter(|cfi| cfi.value.is_none())
+                .map(|cfi| cfi.field)
+                .collect()
+        }),
+    )
+    .await
+    // this filters out all custom fields that are currently unsupported
+    .into_iter().filter(|cf| {
+        let learning_supported = custom_field_learning_supported(cf);
+        if !learning_supported {
+            log::warn!("Custom Fields with name `{}` are using an unsupported custom field type, will be ignored!", cf.name);
+        }
+        learning_supported
+    }).collect();
+    for cf in relevant_custom_fields {
+        let doc_data = serde_json::to_value(&doc).unwrap();
+
+        if let Some(field_grammar) = crate::types::schema_from_custom_field(&cf) {
+            let extracted_cf = spawn_blocking(move || {
+                let mut model_singleton = MODEL_SINGLETON.blocking_lock();
+                if let Some(model) = model_singleton.as_mut() {
+                    model.extract(&doc_data, &field_grammar, false)
+                } else {
+                    Err(crate::extract::ModelError::ModelNotLoaded)
+                }
+            })
+            .await??;
+        }
+        //TODO send result to paperless instance
+    }
+    Ok(())
 }
 
 #[post("/fill/custom_fields")]
@@ -119,7 +203,12 @@ impl WebhookParams {
                         if !doc.tags.contains(&status_tags.processing.id) {
                             let mut updated_doc_tags = doc.tags.clone();
                             updated_doc_tags.push(status_tags.processing.id);
-                            let _ = requests::update_document_tag_ids(&mut api_client, &mut doc, &updated_doc_tags).await;
+                            let _ = requests::update_document_tag_ids(
+                                &mut api_client,
+                                &mut doc,
+                                &updated_doc_tags,
+                            )
+                            .await;
                         }
                         let _ = document_pipeline.send(DocumentProcessingRequest {
                             document: doc,
@@ -170,8 +259,52 @@ impl HttpServiceFactory for DocumentProcessingApi {
     }
 }
 
-async fn document_processor(status_tags: PaperlessStatusTags) {
-    todo!()
+// future performance optimization needs to focus on this function, it should dispatch to batch processing of documents
+// or could combine requests to the same document in the queue.
+async fn document_processor(
+    config: Config,
+    mut api_client: Client,
+    status_tags: PaperlessStatusTags,
+) -> ! {
+    loop {
+        let processing_queue_size = PROCESSING_QUEUE.read().await.len();
+        if processing_queue_size > 0 {
+            let model_path = config.model.clone();
+            {
+                let mut model_singleton = MODEL_SINGLETON.lock().await;
+                *model_singleton = spawn_blocking(move || {
+                    LLModelExtractor::new(&Path::new(&model_path), config.num_gpu_layers, None)
+                })
+                .await
+                .map_err(|err| {
+                    log::error!("Error loading Model! {err}");
+                    err
+                })
+                .ok();
+            }
+            let doc_process_req = PROCESSING_QUEUE
+                .write()
+                .await
+                .pop_front()
+                .expect("Size is greater 0 so there must be a document in the queue");
+            if doc_process_req.processing_type == ProcessingType::CorrespondentSuggest {
+                let _ =
+                    handle_correspondend_suggest(&doc_process_req.document, &mut api_client).await;
+            } else if doc_process_req.processing_type == ProcessingType::CustomFieldPrediction {
+                let _ = handle_custom_field_prediction(&doc_process_req.document, &mut api_client)
+                    .await;
+            } else {
+                log::warn!(
+                    "Unimplemented processing type {:?}! Ignoring request …",
+                    doc_process_req.processing_type
+                )
+            }
+        } else {
+            // No Documents need processing drop model
+            let mut model_singleton = MODEL_SINGLETON.lock().await;
+            let _ = model_singleton.take();
+        }
+    }
 }
 
 /// this function is just here to receive documents for processing from the different api endpoints
@@ -207,7 +340,11 @@ pub async fn run_server(
         finished: finished_tag,
     };
 
-    let doc_processor = spawn(document_processor(status_tags.clone()));
+    let doc_processor = spawn(document_processor(
+        config.clone(),
+        paperless_api_client.clone(),
+        status_tags.clone(),
+    ));
     let doc_to_process_queue = spawn(document_request_funnel(rx));
     let webhook_server = HttpServer::new(move || {
         let app = App::new()

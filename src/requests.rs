@@ -34,6 +34,34 @@ pub async fn get_all_custom_fields(client: &mut Client) -> Vec<CustomField> {
         .await
 }
 
+pub async fn get_custom_fields_by_id(
+    client: &mut Client,
+    custom_field_ids: Option<Vec<i64>>,
+) -> Vec<CustomField> {
+    client
+        .custom_fields()
+        .list_stream(
+            None,
+            custom_field_ids,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .filter_map(async |tag_result| {
+            tag_result
+                .map_err(|err| {
+                    error!("{err}");
+                    err
+                })
+                .ok()
+        })
+        .collect()
+        .await
+}
+
 pub async fn get_all_tags(client: &mut Client) -> Vec<Tag> {
     info!("Requesting All Tags from Server");
     client
