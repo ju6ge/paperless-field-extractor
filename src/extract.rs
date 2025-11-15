@@ -57,21 +57,21 @@ fn gen_gbnf(schema: &schemars::Schema, eos_token: String) -> String {
 pub(crate) enum ModelError {
     #[error(transparent)]
     FormatDeserializationError(#[from] serde_json::Error),
+    #[error("Model has not bee loaded!")]
+    ModelNotLoaded
 }
 
-pub(crate) struct CustomFieldModelExtractor {
+pub(crate) struct LLModelExtractor {
     backend: LlamaBackend,
     model: LlamaModel,
     ctx_params: LlamaContextParams,
-    sampler: LlamaSampler,
     eos_string: String,
 }
 
-impl CustomFieldModelExtractor {
+impl LLModelExtractor {
     pub fn new(
         model_path: &Path,
         num_gpu_layers: usize,
-        response_schema: &Schema,
         ctx_size_max: Option<u32>,
     ) -> Self {
         let mut backend = LlamaBackend::init().unwrap();
@@ -92,18 +92,11 @@ impl CustomFieldModelExtractor {
             .token_to_str(model.token_eos(), Special::Tokenize)
             .unwrap()
             .to_string();
-        let grammar = gen_gbnf(response_schema, eos_string.to_string());
-        let sampler = LlamaSampler::chain_simple([
-            LlamaSampler::grammar(&model, &grammar, "root").unwrap(),
-            LlamaSampler::dry(&model, 5., 1.75, 2, 1024, ["\n", ":", "\"", "*"]),
-            LlamaSampler::greedy(),
-        ]);
 
         Self {
             backend,
             model,
             ctx_params,
-            sampler,
             eos_string: eos_string.to_string(),
         }
     }
@@ -111,9 +104,15 @@ impl CustomFieldModelExtractor {
     pub fn extract(
         &mut self,
         base_data: &Value,
+        response_schema: &Schema,
         dry_run: bool,
     ) -> Result<FieldExtract, ModelError> {
-        self.sampler.reset();
+        let grammar = gen_gbnf(response_schema, self.eos_string.to_string());
+        let mut sampler = LlamaSampler::chain_simple([
+            LlamaSampler::grammar(&self.model, &grammar, "root").unwrap(),
+            LlamaSampler::dry(&self.model, 5., 1.75, 2, 1024, ["\n", ":", "\"", "*"]),
+            LlamaSampler::greedy(),
+        ]);
         let prompt = format!("{}\n", serde_json::to_string(base_data).unwrap());
         let mut ctx = self
             .model
@@ -142,7 +141,7 @@ impl CustomFieldModelExtractor {
         while n_cur as usize <= n_len {
             // sample the next token
             {
-                let token = self.sampler.sample(&ctx, batch.n_tokens() - 1);
+                let token = sampler.sample(&ctx, batch.n_tokens() - 1);
 
                 //sampler.accept(token);
 

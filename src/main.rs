@@ -65,7 +65,7 @@ async fn main() {
         .unwrap();
 
     let mut api_client = Client::new_from_env();
-    api_client.set_base_url(config.paperless_server);
+    api_client.set_base_url(&config.paperless_server);
 
     let custom_fields = requests::get_all_custom_fields(&mut api_client)
         .await
@@ -93,7 +93,6 @@ async fn main() {
             None
         });
 
-    if !args.dry_run {}
     //make sure tags for processing and finshed exists
     let processing_tag = if tags
         .iter()
@@ -190,15 +189,12 @@ async fn main() {
         .collect();
 
     if config.correspondent_suggestions {
+        log::info!("Predicting corresponents for all inbox documents");
         let crrspndts = requests::fetch_all_correspondents(&mut api_client).await;
         let crrspndts_suggest_schema = schema_from_correspondents(crrspndts.as_slice());
 
-        let mut model_extractor = CustomFieldModelExtractor::new(
-            model_path.as_path(),
-            config.num_gpu_layers,
-            &crrspndts_suggest_schema,
-            None,
-        );
+        let mut model_extractor =
+            LLModelExtractor::new(model_path.as_path(), config.num_gpu_layers, None);
 
         for doc in &all_inbox_docs {
             if args.dry_run {
@@ -223,7 +219,11 @@ async fn main() {
                 );
             }
             if let Ok(extracted_correspondent) = model_extractor
-                .extract(&serde_json::to_value(&doc.content).unwrap(), args.dry_run)
+                .extract(
+                    &serde_json::to_value(&doc.content).unwrap(),
+                    &crrspndts_suggest_schema,
+                    args.dry_run,
+                )
                 .map_err(|err| {
                     log::error!("{err}");
                     err
@@ -366,15 +366,15 @@ async fn main() {
             continue;
         }
         if let Some(field_grammar) = schema_from_custom_field(&cf) {
-            let mut model_extractor = CustomFieldModelExtractor::new(
-                model_path.as_path(),
-                config.num_gpu_layers,
-                &field_grammar,
-                None,
-            );
+            let mut model_extractor =
+                LLModelExtractor::new(model_path.as_path(), config.num_gpu_layers, None);
             for doc in docs_to_process {
                 if let Ok(extracted_custom_field_data) = model_extractor
-                    .extract(&serde_json::to_value(&doc).unwrap(), args.dry_run)
+                    .extract(
+                        &serde_json::to_value(&doc).unwrap(),
+                        &field_grammar,
+                        args.dry_run,
+                    )
                     .map_err(|err| {
                         log::error!("{err}");
                         err
