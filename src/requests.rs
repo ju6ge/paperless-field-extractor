@@ -34,6 +34,34 @@ pub async fn get_all_custom_fields(client: &mut Client) -> Vec<CustomField> {
         .await
 }
 
+pub async fn get_custom_fields_by_id(
+    client: &mut Client,
+    custom_field_ids: Option<Vec<i64>>,
+) -> Vec<CustomField> {
+    client
+        .custom_fields()
+        .list_stream(
+            None,
+            custom_field_ids,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .filter_map(async |tag_result| {
+            tag_result
+                .map_err(|err| {
+                    error!("{err}");
+                    err
+                })
+                .ok()
+        })
+        .collect()
+        .await
+}
+
 pub async fn get_all_tags(client: &mut Client) -> Vec<Tag> {
     info!("Requesting All Tags from Server");
     client
@@ -244,6 +272,37 @@ pub(crate) async fn update_document_tags(
             doc.id,
             &PatchedDocumentRequest {
                 tags: Some(tags.iter().map(|t| t.id).collect()),
+                correspondent: Default::default(),
+                document_type: Default::default(),
+                storage_path: Default::default(),
+                title: Default::default(),
+                content: Default::default(),
+                created: Default::default(),
+                created_date: Default::default(),
+                deleted_at: Default::default(),
+                archive_serial_number: Default::default(),
+                owner: Default::default(),
+                set_permissions: Default::default(),
+                custom_fields: Default::default(),
+                remove_inbox_tags: Default::default(),
+            },
+        )
+        .await?;
+    Ok(())
+}
+
+#[allow(deprecated)]
+pub(crate) async fn update_document_tag_ids(
+    api_client: &mut Client,
+    doc: &mut Document,
+    tags: &[i64],
+) -> Result<(), paperless_api_client::types::error::Error> {
+    *doc = api_client
+        .documents()
+        .partial_update(
+            doc.id,
+            &PatchedDocumentRequest {
+                tags: Some(tags.to_vec()),
                 correspondent: Default::default(),
                 document_type: Default::default(),
                 storage_path: Default::default(),

@@ -3,6 +3,7 @@ use std::{fs::File, io::Read, path::Path};
 use serde::Deserialize;
 use thiserror::Error;
 
+#[derive(Debug, Clone)]
 pub(crate) struct Config {
     pub(crate) paperless_server: String,
     pub(crate) processing_tag: String,
