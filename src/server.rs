@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::Path, sync::Arc};
+use std::{collections::VecDeque, path::Path, sync::Arc, time::Duration};
 
 use actix_web::{
     App, HttpResponse, HttpResponseBuilder, HttpServer, ResponseError,
@@ -28,6 +28,9 @@ static DOCID_REGEX: Lazy<Regex> = regex_static::lazy_regex!(r"documents/(\d*)");
 
 static PROCESSING_QUEUE: Lazy<tokio::sync::RwLock<VecDeque<DocumentProcessingRequest>>> =
     Lazy::new(|| RwLock::new(VecDeque::new()));
+
+// shutdown bit, when this is set to true the document processing pipeline will be shut down
+static STOP_FLAG: Lazy<tokio::sync::RwLock<bool>> = Lazy::new(|| RwLock::new(false));
 
 // model will only be initialized and stored if there are documents that need processing
 static MODEL_SINGLETON: Lazy<tokio::sync::Mutex<Option<LLModelExtractor>>> =
@@ -302,8 +305,8 @@ async fn document_processor(
     config: Config,
     mut api_client: Client,
     status_tags: PaperlessStatusTags,
-) -> ! {
-    loop {
+) {
+    while !*STOP_FLAG.read().await {
         let processing_queue_size = PROCESSING_QUEUE.read().await.len();
         if processing_queue_size > 0 {
             let model_path = config.model.clone();
@@ -342,6 +345,7 @@ async fn document_processor(
             let mut model_singleton = MODEL_SINGLETON.lock().await;
             let _ = model_singleton.take();
         }
+        tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }
 
@@ -357,6 +361,8 @@ async fn document_request_funnel(
         let mut doc_queue = PROCESSING_QUEUE.write().await;
         doc_queue.push_back(prc_req);
     }
+
+    *STOP_FLAG.write().await = true;
 }
 
 #[derive(Debug, Clone)]
