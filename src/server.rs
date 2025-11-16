@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::Path, sync::Arc, time::Duration};
+use std::{any::Any, collections::VecDeque, path::Path, sync::Arc, time::Duration};
 
 use actix_web::{
     App, HttpResponse, HttpResponseBuilder, HttpServer, ResponseError,
@@ -40,11 +40,11 @@ use crate::{
     config::{self, Config},
     extract::{LLModelExtractor, ModelError},
     requests,
-    types::{custom_field_learning_supported, FieldError},
+    types::{FieldError, custom_field_learning_supported},
 };
 
-#[non_exhaustive]
 #[derive(Debug, PartialEq)]
+#[non_exhaustive]
 enum ProcessingType {
     CustomFieldPrediction,
     CorrespondentSuggest,
@@ -67,7 +67,7 @@ enum DocumentProcessingError {
     #[error(transparent)]
     PaperlessCommunicationError(#[from] paperless_api_client::types::error::Error),
     #[error(transparent)]
-    ExtractionError(#[from] FieldError)
+    ExtractionError(#[from] FieldError),
 }
 
 async fn handle_correspondend_suggest(
@@ -141,7 +141,11 @@ async fn handle_custom_field_prediction(
             }) {
                 // update document custom fields on server side
                 // sending the updated document to the server will happen afterwards
-                log::debug!("Extracted custom field for document {}\n {:#?}", doc.id, cf_value);
+                log::debug!(
+                    "Extracted custom field for document {}\n {:#?}",
+                    doc.id,
+                    cf_value
+                );
                 doc.custom_fields.as_mut().map(|doc_custom_fields| {
                     for doc_cf_i in doc_custom_fields.iter_mut() {
                         if doc_cf_i.field == cf_value.field {
@@ -327,18 +331,62 @@ async fn document_processor(
                 .await
                 .pop_front()
                 .expect("Size is greater 0 so there must be a document in the queue");
-            if doc_process_req.processing_type == ProcessingType::CorrespondentSuggest {
-                let _ =
-                    handle_correspondend_suggest(&doc_process_req.document, &mut api_client).await;
-            } else if doc_process_req.processing_type == ProcessingType::CustomFieldPrediction {
-                let _ =
+            if match doc_process_req.processing_type {
+                ProcessingType::CustomFieldPrediction => {
                     handle_custom_field_prediction(&mut doc_process_req.document, &mut api_client)
-                        .await;
-            } else {
-                log::warn!(
-                    "Unimplemented processing type {:?}! Ignoring request …",
-                    doc_process_req.processing_type
-                )
+                        .await
+                }
+                ProcessingType::CorrespondentSuggest => {
+                    handle_correspondend_suggest(&doc_process_req.document, &mut api_client).await
+                }
+                _ => {
+                    log::warn!(
+                        "Unimplemented processing type {:?}! Ignoring request …",
+                        doc_process_req.processing_type
+                    );
+                    Ok(())
+                }
+            }
+            .map_err(|err| {
+                log::error!("{err}");
+                err
+            })
+            .is_ok()
+            {
+                let mut same_doc_in_queue_again = false;
+                // if updateing the document was successfull all other reference to the same document in later
+                // processing requests need to be updated
+                {
+                    for doc_other_request in PROCESSING_QUEUE.write().await.iter_mut() {
+                        if doc_other_request.document.id == doc_process_req.document.id {
+                            same_doc_in_queue_again = true;
+                            doc_other_request.document = doc_other_request.document.clone();
+                        }
+                    }
+                }
+
+                // if no further processing request are in the pipeline for the same document, then remove processing tag
+                // and set finished tag
+                if !same_doc_in_queue_again {
+                    let updated_doc_tags: Vec<i64> = doc_process_req
+                        .document
+                        .tags
+                        .iter()
+                        .map(|t| *t)
+                        .filter(|t| *t != status_tags.processing.id)
+                        .chain([status_tags.finished.id].into_iter())
+                        .collect();
+                    let _ = requests::update_document_tag_ids(
+                        &mut api_client,
+                        &mut doc_process_req.document,
+                        &updated_doc_tags,
+                    )
+                    .await
+                    .map_err(|err| {
+                        log::error!("{err}");
+                        err
+                    });
+                }
             }
         } else {
             // No Documents need processing drop model
