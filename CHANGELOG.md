@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Added
+- Changed Architecture to receive webhooks to trigger document processing
+
 ### Added
 - feature correspondent suggestion, let this software suggest correspondents
 
