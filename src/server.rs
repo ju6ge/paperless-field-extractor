@@ -21,6 +21,8 @@ use tokio::{
     sync::{Mutex, RwLock},
     task::{JoinError, spawn_blocking},
 };
+use utoipa::{OpenApi, ToSchema};
+use utoipa_swagger_ui::SwaggerUi;
 
 static DOCID_REGEX: Lazy<Regex> = regex_static::lazy_regex!(r"documents/(\d*)");
 
@@ -171,7 +173,6 @@ async fn handle_custom_field_prediction(
     Ok(())
 }
 
-
 #[derive(Debug, thiserror::Error)]
 enum WebhookError {
     #[error("Document with id `{0}` does not exist!")]
@@ -184,7 +185,7 @@ enum WebhookError {
     ReceivedRequestFromUnconfiguredServer,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct WebhookParams {
     /// url of the document that should be processed
     document_url: String,
@@ -283,6 +284,7 @@ impl WebhookParams {
     }
 }
 
+#[utoipa::path(tag = "llm_workflow_trigger")]
 #[post("/suggest/correspondent")]
 async fn suggest_correspondent(
     params: web::Json<WebhookParams>,
@@ -303,6 +305,7 @@ async fn suggest_correspondent(
     Ok(HttpResponse::Accepted().into())
 }
 
+#[utoipa::path(tag = "llm_workflow_trigger")]
 #[post("/fill/custom_fields")]
 async fn custom_field_prediction(
     params: web::Json<WebhookParams>,
@@ -322,6 +325,13 @@ async fn custom_field_prediction(
         .await?;
     Ok(HttpResponse::Accepted().into())
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(suggest_correspondent, custom_field_prediction),
+    components(schemas(WebhookParams))
+)]
+struct DocumentProcessingApiSpec;
 
 struct DocumentProcessingApi;
 
@@ -475,6 +485,11 @@ pub async fn run_server(
             .app_data(Data::new(config.clone()))
             .app_data(Data::new(paperless_api_client.clone()))
             .app_data(Data::new(status_tags.clone()))
+            .service(
+                SwaggerUi::new("/api/{_:.*}")
+                    .config(utoipa_swagger_ui::Config::default().use_base_layout())
+                    .url("/docs/openapi.json", DocumentProcessingApiSpec::openapi()),
+            )
             .service(DocumentProcessingApi);
         app
     })
