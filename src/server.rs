@@ -7,6 +7,7 @@ use actix_web::{
     post,
     web::{self, Data},
 };
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use paperless_api_client::{
     Client,
@@ -53,6 +54,7 @@ enum ProcessingType {
 struct DocumentProcessingRequest {
     document: Document,
     processing_type: ProcessingType,
+    overwrite_finshed_tag: Option<Tag>,
 }
 
 #[derive(Debug, Error)]
@@ -203,7 +205,11 @@ enum WebhookError {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct WebhookParams {
+    /// url of the document that should be processed
     document_url: String,
+    #[serde(default)]
+    /// tag to apply to document when finished with processing, this is optional if unspecfied the configured finsh tag will be set
+    next_tag: Option<String>,
 }
 
 impl ResponseError for WebhookError {
@@ -251,9 +257,34 @@ impl WebhookParams {
                             )
                             .await;
                         }
+                        let mut next_tag = None;
+                        if let Some(nt_to_parse) = &self.next_tag {
+                            if let Ok(nt_as_id) = nt_to_parse.parse::<i64>() {
+                                next_tag = requests::fetch_tag_by_id_or_name(
+                                    &mut api_client,
+                                    None,
+                                    Some(nt_as_id),
+                                )
+                                .await;
+                            } else {
+                                next_tag = requests::fetch_tag_by_id_or_name(
+                                    &mut api_client,
+                                    Some(nt_to_parse.clone()),
+                                    None,
+                                )
+                                .await;
+                            }
+                        }
+                        if next_tag.is_none() && self.next_tag.is_some() {
+                            log::warn!(
+                                "Webhook received request to use specific finished tag, but the tag does not exists (next_tag=`{}`)! Ignoring tag from request!",
+                                self.next_tag.as_ref().unwrap()
+                            );
+                        }
                         let _ = document_pipeline.send(DocumentProcessingRequest {
                             document: doc,
                             processing_type: req_type,
+                            overwrite_finshed_tag: next_tag,
                         });
                         Ok(())
                     } else {
@@ -357,14 +388,22 @@ async fn document_processor(
 
                 // if no further processing request are in the pipeline for the same document, then remove processing tag
                 // and set finished tag
-                if !same_doc_in_queue_again {
+                if !same_doc_in_queue_again || doc_process_req.overwrite_finshed_tag.is_some() {
                     let updated_doc_tags: Vec<i64> = doc_process_req
                         .document
                         .tags
                         .iter()
                         .map(|t| *t)
-                        .filter(|t| *t != status_tags.processing.id)
-                        .chain([status_tags.finished.id].into_iter())
+                        .filter(|t| {
+                            *t != status_tags.processing.id
+                                || (*t == status_tags.processing.id && same_doc_in_queue_again)
+                        })
+                        .chain(if doc_process_req.overwrite_finshed_tag.is_none() {
+                            [status_tags.finished.id].into_iter()
+                        } else {
+                            [doc_process_req.overwrite_finshed_tag.as_ref().unwrap().id].into_iter()
+                        })
+                        .unique()
                         .collect();
                     let _ = requests::update_document_tag_ids(
                         &mut api_client,
