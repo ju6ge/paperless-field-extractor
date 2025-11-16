@@ -1,15 +1,12 @@
-use std::{any::Any, collections::VecDeque, path::Path, sync::Arc, time::Duration};
+use std::{collections::VecDeque, path::Path, sync::Arc, time::Duration};
 
 use actix_web::{
-    App, HttpResponse, HttpResponseBuilder, HttpServer, ResponseError,
-    dev::{HttpServiceFactory, Url},
-    error::PayloadError,
-    get,
-    http::{StatusCode, Uri, uri},
+    App, HttpResponse, HttpServer, ResponseError,
+    dev::HttpServiceFactory,
+    http::{StatusCode, Uri},
     post,
     web::{self, Data},
 };
-use clap::error;
 use once_cell::sync::Lazy;
 use paperless_api_client::{
     Client,
@@ -37,7 +34,7 @@ static MODEL_SINGLETON: Lazy<tokio::sync::Mutex<Option<LLModelExtractor>>> =
     Lazy::new(|| Mutex::new(None));
 
 use crate::{
-    config::{self, Config},
+    config::Config,
     extract::{LLModelExtractor, ModelError},
     requests,
     types::{FieldError, custom_field_learning_supported},
@@ -338,13 +335,6 @@ async fn document_processor(
                 }
                 ProcessingType::CorrespondentSuggest => {
                     handle_correspondend_suggest(&doc_process_req.document, &mut api_client).await
-                }
-                _ => {
-                    log::warn!(
-                        "Unimplemented processing type {:?}! Ignoring request …",
-                        doc_process_req.processing_type
-                    );
-                    Ok(())
                 }
             }
             .map_err(|err| {

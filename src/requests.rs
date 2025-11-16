@@ -1,4 +1,4 @@
-use futures::{StreamExt, TryFutureExt};
+use futures::StreamExt;
 use log::{error, info};
 use paperless_api_client::{
     Client,
@@ -8,6 +8,7 @@ use paperless_api_client::{
     },
 };
 
+#[allow(dead_code)]
 pub async fn get_all_custom_fields(client: &mut Client) -> Vec<CustomField> {
     info!("Requesting Custom Fields from Server");
     client
@@ -89,6 +90,7 @@ pub async fn get_all_tags(client: &mut Client) -> Vec<Tag> {
         .await
 }
 
+#[allow(dead_code)]
 pub async fn get_all_docs(client: &mut Client) -> Vec<Document> {
     client
         .documents()
@@ -261,6 +263,7 @@ pub(crate) async fn create_tag(
 }
 
 #[allow(deprecated)]
+#[allow(dead_code)]
 pub(crate) async fn update_document_tags(
     api_client: &mut Client,
     doc: &mut Document,
@@ -387,6 +390,7 @@ pub(crate) async fn fetch_all_correspondents(api_client: &mut Client) -> Vec<Cor
         .await
 }
 
+#[allow(dead_code)]
 pub(crate) async fn fetch_doc_suggestions(
     api_client: &mut Client,
     doc: &Document,

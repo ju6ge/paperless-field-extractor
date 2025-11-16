@@ -2,12 +2,8 @@ use std::{path::Path, process::exit};
 
 use clap::Parser;
 use config::{Config, OverlayConfig};
-use extract::LLModelExtractor;
 use paperless_api_client::Client;
 use server::run_server;
-use types::{
-    custom_field_learning_supported, schema_from_correspondents, schema_from_custom_field,
-};
 
 mod config;
 mod extract;
@@ -46,7 +42,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    let args = Args::parse();
+    let _args = Args::parse();
     colog::init();
 
     let config = Config::default()
