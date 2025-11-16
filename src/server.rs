@@ -171,25 +171,6 @@ async fn handle_custom_field_prediction(
     Ok(())
 }
 
-#[post("/fill/custom_fields")]
-async fn custom_field_prediction(
-    params: web::Json<WebhookParams>,
-    status_tags: Data<PaperlessStatusTags>,
-    api_client: Data<Client>,
-    config: Data<Config>,
-    document_pipeline: web::Data<tokio::sync::mpsc::UnboundedSender<DocumentProcessingRequest>>,
-) -> Result<HttpResponse, WebhookError> {
-    let _ = params
-        .handle_request(
-            status_tags,
-            api_client,
-            config,
-            document_pipeline,
-            ProcessingType::CustomFieldPrediction,
-        )
-        .await?;
-    Ok(HttpResponse::Accepted().into())
-}
 
 #[derive(Debug, thiserror::Error)]
 enum WebhookError {
@@ -317,6 +298,26 @@ async fn suggest_correspondent(
             config,
             document_pipeline,
             ProcessingType::CorrespondentSuggest,
+        )
+        .await?;
+    Ok(HttpResponse::Accepted().into())
+}
+
+#[post("/fill/custom_fields")]
+async fn custom_field_prediction(
+    params: web::Json<WebhookParams>,
+    status_tags: Data<PaperlessStatusTags>,
+    api_client: Data<Client>,
+    config: Data<Config>,
+    document_pipeline: web::Data<tokio::sync::mpsc::UnboundedSender<DocumentProcessingRequest>>,
+) -> Result<HttpResponse, WebhookError> {
+    let _ = params
+        .handle_request(
+            status_tags,
+            api_client,
+            config,
+            document_pipeline,
+            ProcessingType::CustomFieldPrediction,
         )
         .await?;
     Ok(HttpResponse::Accepted().into())
