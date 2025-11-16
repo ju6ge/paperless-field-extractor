@@ -35,22 +35,34 @@ pub async fn get_all_custom_fields(client: &mut Client) -> Vec<CustomField> {
         .await
 }
 
+pub async fn fetch_tag_by_id_or_name(
+    client: &mut Client,
+    name: Option<String>,
+    id: Option<i64>,
+) -> Option<Tag> {
+    let found_tags: Vec<Tag> = client
+        .tags()
+        .list_stream(None, id, None, None, None, name, None, None, None)
+        .filter_map(async |tag_result| {
+            tag_result
+                .map_err(|err| {
+                    log::error!("{err}");
+                    err
+                })
+                .ok()
+        })
+        .collect()
+        .await;
+    found_tags.into_iter().next()
+}
+
 pub async fn get_custom_fields_by_id(
     client: &mut Client,
     custom_field_ids: Option<Vec<i64>>,
 ) -> Vec<CustomField> {
     client
         .custom_fields()
-        .list_stream(
-            None,
-            custom_field_ids,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
+        .list_stream(None, custom_field_ids, None, None, None, None, None, None)
         .filter_map(async |tag_result| {
             tag_result
                 .map_err(|err| {
