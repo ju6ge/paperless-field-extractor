@@ -37,7 +37,7 @@ use crate::{
     config::{self, Config},
     extract::{LLModelExtractor, ModelError},
     requests,
-    types::custom_field_learning_supported,
+    types::{custom_field_learning_supported, FieldError},
 };
 
 #[non_exhaustive]
@@ -61,6 +61,10 @@ enum DocumentProcessingError {
     SpawningProcessingThreadFailed(#[from] JoinError),
     #[error(transparent)]
     ModelProcessingError(#[from] ModelError),
+    #[error(transparent)]
+    PaperlessCommunicationError(#[from] paperless_api_client::types::error::Error),
+    #[error(transparent)]
+    ExtractionError(#[from] FieldError)
 }
 
 async fn handle_correspondend_suggest(
@@ -82,12 +86,14 @@ async fn handle_correspondend_suggest(
     })
     .await??;
 
-    //TODO send result to paperless instance
+    let new_crrspndt = extracted_correspondent.to_correspondent(&crrspndts)?;
+    requests::update_doc_correspondent(api_client, doc, &new_crrspndt).await?;
+
     Ok(())
 }
 
 async fn handle_custom_field_prediction(
-    doc: &Document,
+    doc: &mut Document,
     api_client: &mut Client,
 ) -> Result<(), DocumentProcessingError> {
     // fetch all custom field definitions for fields on the document that need to be filled
@@ -109,6 +115,9 @@ async fn handle_custom_field_prediction(
         }
         learning_supported
     }).collect();
+
+    let mut updated_custom_fields = false;
+
     for cf in relevant_custom_fields {
         let doc_data = serde_json::to_value(&doc).unwrap();
 
@@ -122,9 +131,37 @@ async fn handle_custom_field_prediction(
                 }
             })
             .await??;
+
+            if let Ok(cf_value) = extracted_cf.to_custom_field_instance(&cf).map_err(|err| {
+                log::error!("{err}");
+                err
+            }) {
+                // update document custom fields on server side
+                // sending the updated document to the server will happen afterwards
+                log::debug!("Extracted custom field for document {}\n {:#?}", doc.id, cf_value);
+                doc.custom_fields.as_mut().map(|doc_custom_fields| {
+                    for doc_cf_i in doc_custom_fields.iter_mut() {
+                        if doc_cf_i.field == cf_value.field {
+                            *doc_cf_i = cf_value.clone()
+                        }
+                    }
+                });
+                updated_custom_fields = true;
+            }
         }
-        //TODO send result to paperless instance
     }
+
+    // after custom fields have been changed on the document sync state back to paperless
+    if updated_custom_fields {
+        let mut cf_list = Vec::new();
+        if let Some(doc_fields) = doc.custom_fields.as_ref() {
+            for cf in doc_fields {
+                cf_list.push(cf.clone());
+            }
+        }
+        requests::update_document_custom_fields(api_client, doc, &cf_list).await?;
+    }
+
     Ok(())
 }
 
@@ -282,7 +319,7 @@ async fn document_processor(
                 })
                 .ok();
             }
-            let doc_process_req = PROCESSING_QUEUE
+            let mut doc_process_req = PROCESSING_QUEUE
                 .write()
                 .await
                 .pop_front()
@@ -291,8 +328,9 @@ async fn document_processor(
                 let _ =
                     handle_correspondend_suggest(&doc_process_req.document, &mut api_client).await;
             } else if doc_process_req.processing_type == ProcessingType::CustomFieldPrediction {
-                let _ = handle_custom_field_prediction(&doc_process_req.document, &mut api_client)
-                    .await;
+                let _ =
+                    handle_custom_field_prediction(&mut doc_process_req.document, &mut api_client)
+                        .await;
             } else {
                 log::warn!(
                     "Unimplemented processing type {:?}! Ignoring request …",
