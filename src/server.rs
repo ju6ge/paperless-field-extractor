@@ -353,21 +353,22 @@ async fn document_processor(
     status_tags: PaperlessStatusTags,
 ) {
     while !*STOP_FLAG.read().await {
-        let processing_queue_size = PROCESSING_QUEUE.read().await.len();
-        if processing_queue_size > 0 {
+        while PROCESSING_QUEUE.read().await.len() > 0 {
             let model_path = config.model.clone();
             {
                 let mut model_singleton = MODEL_SINGLETON.lock().await;
-                *model_singleton = spawn_blocking(move || {
-                    LLModelExtractor::new(&Path::new(&model_path), config.num_gpu_layers, None)
-                })
-                .await
-                .map_err(|err| {
-                    log::error!("Error loading Model! {err}");
-                    ModelError::ModelNotLoaded
-                })
-                .and_then(|r| r)
-                .ok();
+                if model_singleton.is_none() {
+                    *model_singleton = spawn_blocking(move || {
+                        LLModelExtractor::new(&Path::new(&model_path), config.num_gpu_layers, None)
+                    })
+                    .await
+                    .map_err(|err| {
+                        log::error!("Error loading Model! {err}");
+                        ModelError::ModelNotLoaded
+                    })
+                    .and_then(|r| r)
+                    .ok();
+                }
             }
             let mut doc_process_req = PROCESSING_QUEUE
                 .write()
@@ -432,12 +433,14 @@ async fn document_processor(
                     });
                 }
             }
-        } else {
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        if PROCESSING_QUEUE.read().await.len() == 0 && MODEL_SINGLETON.lock().await.is_some() {
             // No Documents need processing drop model
+            log::info!("Unloading Model due to processing queue being empty!");
             let mut model_singleton = MODEL_SINGLETON.lock().await;
             let _ = model_singleton.take();
         }
-        tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }
 
