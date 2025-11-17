@@ -186,6 +186,7 @@ enum WebhookError {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+/// General webhook parameters any workflow trigger will accept this type
 struct WebhookParams {
     /// url of the document that should be processed
     document_url: String,
@@ -286,6 +287,7 @@ impl WebhookParams {
 
 #[utoipa::path(tag = "llm_workflow_trigger")]
 #[post("/suggest/correspondent")]
+/// Workflow to suggest a correspondent for a document
 async fn suggest_correspondent(
     params: web::Json<WebhookParams>,
     status_tags: Data<PaperlessStatusTags>,
@@ -307,6 +309,7 @@ async fn suggest_correspondent(
 
 #[utoipa::path(tag = "llm_workflow_trigger")]
 #[post("/fill/custom_fields")]
+/// Workflow to fill unfilled custom fields on a document
 async fn custom_field_prediction(
     params: web::Json<WebhookParams>,
     status_tags: Data<PaperlessStatusTags>,
