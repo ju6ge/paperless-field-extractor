@@ -21,6 +21,8 @@ use tokio::{
     sync::{Mutex, RwLock},
     task::{JoinError, spawn_blocking},
 };
+use utoipa::{OpenApi, ToSchema};
+use utoipa_swagger_ui::SwaggerUi;
 
 static DOCID_REGEX: Lazy<Regex> = regex_static::lazy_regex!(r"documents/(\d*)");
 
@@ -171,26 +173,6 @@ async fn handle_custom_field_prediction(
     Ok(())
 }
 
-#[post("/fill/custom_fields")]
-async fn custom_field_prediction(
-    params: web::Json<WebhookParams>,
-    status_tags: Data<PaperlessStatusTags>,
-    api_client: Data<Client>,
-    config: Data<Config>,
-    document_pipeline: web::Data<tokio::sync::mpsc::UnboundedSender<DocumentProcessingRequest>>,
-) -> Result<HttpResponse, WebhookError> {
-    let _ = params
-        .handle_request(
-            status_tags,
-            api_client,
-            config,
-            document_pipeline,
-            ProcessingType::CustomFieldPrediction,
-        )
-        .await?;
-    Ok(HttpResponse::Accepted().into())
-}
-
 #[derive(Debug, thiserror::Error)]
 enum WebhookError {
     #[error("Document with id `{0}` does not exist!")]
@@ -203,7 +185,8 @@ enum WebhookError {
     ReceivedRequestFromUnconfiguredServer,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+/// General webhook parameters any workflow trigger will accept this type
 struct WebhookParams {
     /// url of the document that should be processed
     document_url: String,
@@ -302,7 +285,9 @@ impl WebhookParams {
     }
 }
 
+#[utoipa::path(tag = "llm_workflow_trigger")]
 #[post("/suggest/correspondent")]
+/// Workflow to suggest a correspondent for a document
 async fn suggest_correspondent(
     params: web::Json<WebhookParams>,
     status_tags: Data<PaperlessStatusTags>,
@@ -322,6 +307,35 @@ async fn suggest_correspondent(
     Ok(HttpResponse::Accepted().into())
 }
 
+#[utoipa::path(tag = "llm_workflow_trigger")]
+#[post("/fill/custom_fields")]
+/// Workflow to fill unfilled custom fields on a document
+async fn custom_field_prediction(
+    params: web::Json<WebhookParams>,
+    status_tags: Data<PaperlessStatusTags>,
+    api_client: Data<Client>,
+    config: Data<Config>,
+    document_pipeline: web::Data<tokio::sync::mpsc::UnboundedSender<DocumentProcessingRequest>>,
+) -> Result<HttpResponse, WebhookError> {
+    let _ = params
+        .handle_request(
+            status_tags,
+            api_client,
+            config,
+            document_pipeline,
+            ProcessingType::CustomFieldPrediction,
+        )
+        .await?;
+    Ok(HttpResponse::Accepted().into())
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(suggest_correspondent, custom_field_prediction),
+    components(schemas(WebhookParams))
+)]
+struct DocumentProcessingApiSpec;
+
 struct DocumentProcessingApi;
 
 impl HttpServiceFactory for DocumentProcessingApi {
@@ -339,21 +353,22 @@ async fn document_processor(
     status_tags: PaperlessStatusTags,
 ) {
     while !*STOP_FLAG.read().await {
-        let processing_queue_size = PROCESSING_QUEUE.read().await.len();
-        if processing_queue_size > 0 {
+        while PROCESSING_QUEUE.read().await.len() > 0 {
             let model_path = config.model.clone();
             {
                 let mut model_singleton = MODEL_SINGLETON.lock().await;
-                *model_singleton = spawn_blocking(move || {
-                    LLModelExtractor::new(&Path::new(&model_path), config.num_gpu_layers, None)
-                })
-                .await
-                .map_err(|err| {
-                    log::error!("Error loading Model! {err}");
-                    ModelError::ModelNotLoaded
-                })
-                .and_then(|r| r)
-                .ok();
+                if model_singleton.is_none() {
+                    *model_singleton = spawn_blocking(move || {
+                        LLModelExtractor::new(&Path::new(&model_path), config.num_gpu_layers, None)
+                    })
+                    .await
+                    .map_err(|err| {
+                        log::error!("Error loading Model! {err}");
+                        ModelError::ModelNotLoaded
+                    })
+                    .and_then(|r| r)
+                    .ok();
+                }
             }
             let mut doc_process_req = PROCESSING_QUEUE
                 .write()
@@ -418,12 +433,14 @@ async fn document_processor(
                     });
                 }
             }
-        } else {
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        if PROCESSING_QUEUE.read().await.len() == 0 && MODEL_SINGLETON.lock().await.is_some() {
             // No Documents need processing drop model
+            log::info!("Unloading Model due to processing queue being empty!");
             let mut model_singleton = MODEL_SINGLETON.lock().await;
             let _ = model_singleton.take();
         }
-        tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }
 
@@ -474,6 +491,11 @@ pub async fn run_server(
             .app_data(Data::new(config.clone()))
             .app_data(Data::new(paperless_api_client.clone()))
             .app_data(Data::new(status_tags.clone()))
+            .service(
+                SwaggerUi::new("/api/{_:.*}")
+                    .config(utoipa_swagger_ui::Config::default().use_base_layout())
+                    .url("/docs/openapi.json", DocumentProcessingApiSpec::openapi()),
+            )
             .service(DocumentProcessingApi);
         app
     })
