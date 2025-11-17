@@ -350,8 +350,9 @@ async fn document_processor(
                 .await
                 .map_err(|err| {
                     log::error!("Error loading Model! {err}");
-                    err
+                    ModelError::ModelNotLoaded
                 })
+                .and_then(|r| r)
                 .ok();
             }
             let mut doc_process_req = PROCESSING_QUEUE

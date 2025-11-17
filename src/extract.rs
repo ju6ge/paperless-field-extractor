@@ -1,3 +1,4 @@
+use llama_cpp_2::LLamaCppError;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
@@ -57,8 +58,10 @@ fn gen_gbnf(schema: &schemars::Schema, eos_token: String) -> String {
 pub(crate) enum ModelError {
     #[error(transparent)]
     FormatDeserializationError(#[from] serde_json::Error),
-    #[error("Model has not bee loaded!")]
-    ModelNotLoaded
+    #[error("Model has not been loaded!")]
+    ModelNotLoaded,
+    #[error(transparent)]
+    LlamaCppError(#[from] LLamaCppError),
 }
 
 pub(crate) struct LLModelExtractor {
@@ -73,8 +76,8 @@ impl LLModelExtractor {
         model_path: &Path,
         num_gpu_layers: usize,
         ctx_size_max: Option<u32>,
-    ) -> Self {
-        let mut backend = LlamaBackend::init().unwrap();
+    ) -> Result<Self, ModelError> {
+        let mut backend = LlamaBackend::init()?;
         backend.void_logs();
         let params = LlamaModelParams::default().with_n_gpu_layers(num_gpu_layers as u32);
         let model = LlamaModel::load_from_file(&backend, model_path, &params)
@@ -93,12 +96,12 @@ impl LLModelExtractor {
             .unwrap()
             .to_string();
 
-        Self {
+        Ok(Self {
             backend,
             model,
             ctx_params,
             eos_string: eos_string.to_string(),
-        }
+        })
     }
 
     pub fn extract(
