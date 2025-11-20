@@ -8,6 +8,45 @@ use paperless_api_client::{
     },
 };
 
+pub async fn processed_doc_update(
+    client: &mut Client,
+    doc_id: i64,
+    tags: Vec<i64>,
+    correspondent: Option<i64>,
+    cf: Option<Vec<CustomFieldInstance>>,
+) -> Result<(), paperless_api_client::types::error::Error> {
+    client
+        .documents()
+        .partial_update(
+            doc_id,
+            &PatchedDocumentRequest {
+                correspondent: correspondent,
+                document_type: None,
+                storage_path: None,
+                title: None,
+                content: None,
+                tags: Some(tags),
+                created: None,
+                created_date: None,
+                deleted_at: None,
+                archive_serial_number: None,
+                owner: None,
+                set_permissions: None,
+                custom_fields: cf.map(|cfis| {
+                    cfis.into_iter()
+                        .map(|cfi| CustomFieldInstanceRequest {
+                            value: cfi.value,
+                            field: cfi.field,
+                        })
+                        .collect()
+                }),
+                remove_inbox_tags: None,
+            },
+        )
+        .await?;
+    Ok(())
+}
+
 #[allow(dead_code)]
 pub async fn get_all_custom_fields(client: &mut Client) -> Vec<CustomField> {
     info!("Requesting Custom Fields from Server");
