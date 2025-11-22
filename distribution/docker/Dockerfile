@@ -32,6 +32,6 @@ RUN apt-get update && \
 
 RUN mkdir -p $(dirname "$GGUF_MODEL_PATH") && curl -Lo "$GGUF_MODEL_PATH" "$MODEL_URL" && curl -Lo "$(dirname "$GGUF_MODEL_PATH")/LICENSE" "$MODEL_LICENSE_URL"
 
-COPY --from=builder /build/target/release/paperless-field-extractor /usr/local/bin/
+COPY --from=builder /build/target/release/paperless-llm-workflows /usr/local/bin/
 
-ENTRYPOINT [ "/usr/local/bin/paperless-field-extractor" ]
+ENTRYPOINT [ "/usr/local/bin/paperless-llm-workflows" ]
