@@ -1,0 +1,80 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "paperless-llm-workflows",
+    "description": "",
+    "license": {
+      "name": "AGPL-3.0",
+      "identifier": "AGPL-3.0"
+    },
+    "version": "0.3.0"
+  },
+  "paths": {
+    "/fill/custom_fields": {
+      "post": {
+        "tags": [
+          "llm_workflow_trigger"
+        ],
+        "summary": "Workflow to fill unfilled custom fields on a document",
+        "description": "Scan document for unfilled custom fields and use llm to predict the values from the document content.\n\n## Supported Custom Field Types\n\nCurrently this projects predicting the following kinds of custom fields:\n- [x] Boolean\n- [x] Date\n- [x] Integer\n- [x] Number\n- [x] Monetary\n- [x] Text\n- [x] Select\n- [ ] Document Link\n- [ ] URL\n- [ ] LargeText",
+        "operationId": "custom_field_prediction",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {}
+      }
+    },
+    "/suggest/correspondent": {
+      "post": {
+        "tags": [
+          "llm_workflow_trigger"
+        ],
+        "summary": "Workflow to suggest a correspondent for a document",
+        "description": "Given the document content and all possible correspondents select a correspondent using a\nreasoning approach. This workflow might take longer given the llm reasoning!\n\nAfterwards set the correspondent of the document, sadly just adding it as another suggestion is not supported\nby the paperless api.",
+        "operationId": "suggest_correspondent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {}
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "WebhookParams": {
+        "type": "object",
+        "description": "General webhook parameters any workflow trigger will accept this type",
+        "required": [
+          "document_url"
+        ],
+        "properties": {
+          "document_url": {
+            "type": "string",
+            "description": "url of the document that should be processed"
+          },
+          "next_tag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "tag to apply to document when finished with processing, this is optional if unspecfied the configured finsh tag will be set"
+          }
+        }
+      }
+    }
+  }
+}
