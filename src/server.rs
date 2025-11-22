@@ -46,7 +46,7 @@ use crate::{
     config::Config,
     extract::{LLModelExtractor, ModelError},
     requests,
-    types::{FieldError, custom_field_learning_supported},
+    types::{FieldError, FieldExtract, custom_field_learning_supported},
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -200,6 +200,8 @@ enum WebhookError {
     DocumentUrlParsingIDFailed,
     #[error("Document Url points to a server unrelated to this configuration. Ignoring Request")]
     ReceivedRequestFromUnconfiguredServer,
+    #[error("Request specified tag {0}, but it could not be found, neither id nor name exists!")]
+    TagNotFound(String),
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -328,7 +330,69 @@ async fn decision(
     config: Data<Config>,
     document_pipeline: web::Data<tokio::sync::mpsc::UnboundedSender<DocumentProcessingRequest>>,
 ) -> Result<HttpResponse, WebhookError> {
-    todo!()
+    let mut api_client_cloned =
+        Arc::<Client>::make_mut(&mut api_client.clone().into_inner()).clone();
+    let true_tag;
+    if let Ok(tt_as_id) = params.true_tag.parse::<i64>() {
+        true_tag =
+            requests::fetch_tag_by_id_or_name(&mut api_client_cloned, None, Some(tt_as_id)).await;
+    } else {
+        true_tag = requests::fetch_tag_by_id_or_name(
+            &mut api_client_cloned,
+            Some(params.true_tag.clone()),
+            None,
+        )
+        .await;
+    }
+    // a true tag is expected, if none could be found then the request is invalid
+    if true_tag.is_none() {
+        return Err(WebhookError::TagNotFound(params.true_tag.clone()));
+    }
+
+    let mut false_tag = None;
+    if let Some(ft_to_parse) = &params.false_tag {
+        if let Ok(ft_as_id) = ft_to_parse.parse::<i64>() {
+            false_tag =
+                requests::fetch_tag_by_id_or_name(&mut api_client_cloned, None, Some(ft_as_id))
+                    .await;
+        } else {
+            false_tag = requests::fetch_tag_by_id_or_name(
+                &mut api_client_cloned,
+                Some(ft_to_parse.clone()),
+                None,
+            )
+            .await;
+        }
+    }
+
+    // if the request specified a false tag but it could not be found, this is also an error
+    // since the user specifically wants to have a tag on false result, if the tag does not
+    // exists then this will not work, so the request is invalid
+    if false_tag.is_none() && params.false_tag.is_some() {
+        return Err(WebhookError::TagNotFound(params.true_tag.clone()));
+    }
+
+    let process_type = ProcessingType::DecsionTagFlow {
+        question: params.question.clone(),
+        true_tag: true_tag.expect("none case was already handled"),
+        false_tag: false_tag,
+    };
+
+    let generic_webhook_params = WebhookParams {
+        document_url: params.document_url.clone(),
+        next_tag: None,
+    };
+
+    generic_webhook_params
+        .handle_request(
+            status_tags,
+            api_client,
+            config,
+            document_pipeline,
+            process_type,
+        )
+        .await?;
+    Ok(HttpResponse::Accepted().into())
 }
 
 #[utoipa::path(tag = "llm_workflow_trigger")]
