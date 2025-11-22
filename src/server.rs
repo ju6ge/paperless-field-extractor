@@ -46,7 +46,10 @@ use crate::{
     config::Config,
     extract::{LLModelExtractor, ModelError},
     requests,
-    types::{FieldError, FieldExtract, custom_field_learning_supported},
+    types::{
+        Decision, FieldError, FieldExtract, custom_field_learning_supported,
+        schema_from_decision_question,
+    },
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -56,7 +59,7 @@ enum ProcessingType {
     CorrespondentSuggest,
     DecsionTagFlow {
         question: String,
-        true_tag: Tag,
+        true_tag: Option<Tag>,
         false_tag: Option<Tag>,
     },
 }
@@ -110,6 +113,11 @@ async fn handle_correspondend_suggest(
         }
     })
     .await??;
+
+    log::debug!(
+        "Suggested new correspondent for doc {}: \n{extracted_correspondent:#?}",
+        doc.id
+    );
 
     let extracted_correspondent: FieldExtract =
         serde_json::from_value(extracted_correspondent).map_err(FieldError::from)?;
@@ -190,6 +198,53 @@ async fn handle_custom_field_prediction(
     Ok(())
 }
 
+async fn handle_decision(
+    doc: &mut Document,
+    question: &String,
+    true_tag: Option<&Tag>,
+    false_tag: Option<&Tag>,
+) -> Result<(), DocumentProcessingError> {
+    let decision_schema = schema_from_decision_question(question);
+
+    let doc_data = serde_json::to_value(&doc.content).unwrap();
+
+    let extracted_answer = spawn_blocking(move || {
+        let mut model_singleton = MODEL_SINGLETON.blocking_lock();
+        if let Some(model) = model_singleton.as_mut() {
+            model.extract(&doc_data, &decision_schema, false)
+        } else {
+            Err(crate::extract::ModelError::ModelNotLoaded)
+        }
+    })
+    .await??;
+
+    let extracted_decision: Decision =
+        serde_json::from_value(extracted_answer).map_err(FieldError::from)?;
+
+    log::debug!(
+        "Made decision on document {}\n{extracted_decision:#?}",
+        doc.id
+    );
+
+    if let Some(true_tag) = true_tag
+        && extracted_decision.answer_bool
+    {
+        if !doc.tags.contains(&true_tag.id) {
+            doc.tags.push(true_tag.id);
+        }
+    }
+
+    if let Some(false_tag) = false_tag
+        && !extracted_decision.answer_bool
+    {
+        if !doc.tags.contains(&false_tag.id) {
+            doc.tags.push(false_tag.id);
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 enum WebhookError {
     #[error("Document with id `{0}` does not exist!")]
@@ -202,6 +257,10 @@ enum WebhookError {
     ReceivedRequestFromUnconfiguredServer,
     #[error("Request specified tag {0}, but it could not be found, neither id nor name exists!")]
     TagNotFound(String),
+    #[error(
+        "The request is configured in a way that nothing is going to happen when the request completes, so it will be ignored!"
+    )]
+    RequestWithoutEffect,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -210,8 +269,8 @@ struct DecisionTagFlowRequest {
     document_url: String,
     /// question about the document, should be answerable with true/false
     question: String,
-    /// tag to assign if answer is true
-    true_tag: String,
+    /// optional tag to assign if answer is true
+    true_tag: Option<String>,
     /// optional tag to assign if the answer is false
     false_tag: Option<String>,
 }
@@ -323,6 +382,8 @@ impl WebhookParams {
 /// The goal of this endpoint is to enable decision based workflows in paperless. Ask a question about the document and
 /// if the answer is true the document will be assigend the `true_tag`. If not and the `false_tag` is specified it will be assigned.
 /// This enables doing `if/else` style workflows by using tagging to conditionally trigger further processing steps.
+///
+/// If neither `false_tag` nor `true_tag` are specified the request will be discared since the result would have no effect!
 async fn decision(
     params: web::Json<DecisionTagFlowRequest>,
     status_tags: Data<PaperlessStatusTags>,
@@ -332,21 +393,24 @@ async fn decision(
 ) -> Result<HttpResponse, WebhookError> {
     let mut api_client_cloned =
         Arc::<Client>::make_mut(&mut api_client.clone().into_inner()).clone();
-    let true_tag;
-    if let Ok(tt_as_id) = params.true_tag.parse::<i64>() {
-        true_tag =
-            requests::fetch_tag_by_id_or_name(&mut api_client_cloned, None, Some(tt_as_id)).await;
-    } else {
-        true_tag = requests::fetch_tag_by_id_or_name(
-            &mut api_client_cloned,
-            Some(params.true_tag.clone()),
-            None,
-        )
-        .await;
+    let mut true_tag = None;
+    if let Some(tt_to_parse) = &params.true_tag {
+        if let Ok(tt_as_id) = tt_to_parse.parse::<i64>() {
+            true_tag =
+                requests::fetch_tag_by_id_or_name(&mut api_client_cloned, None, Some(tt_as_id))
+                    .await;
+        } else {
+            true_tag = requests::fetch_tag_by_id_or_name(
+                &mut api_client_cloned,
+                Some(tt_to_parse.clone()),
+                None,
+            )
+            .await;
+        }
     }
     // a true tag is expected, if none could be found then the request is invalid
-    if true_tag.is_none() {
-        return Err(WebhookError::TagNotFound(params.true_tag.clone()));
+    if true_tag.is_none() && params.true_tag.is_some() {
+        return Err(WebhookError::TagNotFound(params.true_tag.clone().unwrap()));
     }
 
     let mut false_tag = None;
@@ -369,12 +433,16 @@ async fn decision(
     // since the user specifically wants to have a tag on false result, if the tag does not
     // exists then this will not work, so the request is invalid
     if false_tag.is_none() && params.false_tag.is_some() {
-        return Err(WebhookError::TagNotFound(params.true_tag.clone()));
+        return Err(WebhookError::TagNotFound(params.false_tag.clone().unwrap()));
+    }
+
+    if true_tag.is_none() && false_tag.is_none() {
+        return Err(WebhookError::RequestWithoutEffect);
     }
 
     let process_type = ProcessingType::DecsionTagFlow {
         question: params.question.clone(),
-        true_tag: true_tag.expect("none case was already handled"),
+        true_tag: true_tag,
         false_tag: false_tag,
     };
 
@@ -513,7 +581,18 @@ fn merge_document_status(
             }
         }
         ProcessingType::CorrespondentSuggest => doc.correspondent = updated_doc.correspondent,
-        _ => todo!(),
+        ProcessingType::DecsionTagFlow {
+            question: _,
+            true_tag: _,
+            false_tag: _,
+        } => {
+            // this processing type adds tags to the document
+            for updated_tag in &updated_doc.tags {
+                if !doc.tags.contains(updated_tag) {
+                    doc.tags.push(*updated_tag);
+                }
+            }
+        }
     }
 }
 
@@ -586,7 +665,14 @@ async fn document_updater(
                     ProcessingType::CorrespondentSuggest => {
                         updated_crrspdnt = doc_req.document.correspondent;
                     }
-                    _ => todo!(),
+                    ProcessingType::DecsionTagFlow {
+                        question: _,
+                        true_tag: _,
+                        false_tag: _,
+                    } => {
+                        // nothing needs to happen here, the updated tags are already part of the document
+                        // since they are synced with the same document in the queue
+                    }
                 }
             }
 
@@ -671,7 +757,19 @@ async fn document_processor(
                     handle_correspondend_suggest(&mut doc_process_req.document, &mut api_client)
                         .await
                 }
-                _ => todo!(),
+                ProcessingType::DecsionTagFlow {
+                    ref question,
+                    ref true_tag,
+                    ref false_tag,
+                } => {
+                    handle_decision(
+                        &mut doc_process_req.document,
+                        question,
+                        true_tag.as_ref(),
+                        false_tag.as_ref(),
+                    )
+                    .await
+                }
             };
 
             let mut doc_in_queue_again = false;
