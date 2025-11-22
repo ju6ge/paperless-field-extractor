@@ -45,6 +45,7 @@ can use to overwrite what tag will be assigned once the processing step has comp
 As of now the following llm workflows are availible:
 - `/fill/custom_fields`: For all supported custom fields datatypes extract value from document content
 - `/suggest/correspondent`: Suggest document correspondent by using reasoning
+- `/decision`: Ask a true or false question about the document and set tags depending on result
 
 
 # Configuration
