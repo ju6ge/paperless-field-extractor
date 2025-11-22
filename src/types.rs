@@ -12,7 +12,7 @@ pub(crate) struct CurrencyValue {
     currency_code: String,
 }
 
-#[derive(Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct FieldExtract {
     /// this field is used to guide the model to extract the desired data
     /// during grammar generation the string will be set to a constant value
@@ -370,4 +370,26 @@ pub(crate) fn schema_from_custom_field(cf: &CustomField) -> Option<schemars::Sch
         properties
     });
     Some(base_schema)
+}
+
+/// the purpose of this type is to frame the language models output when handling a decision request
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct Decision {
+    /// the schema for this field will be replaced by a constant string that is the user supplied question about
+    /// the document
+    question: String,
+    /// give the model some room to argue in a short string about the correct result
+    answer_reasoning_short_summary: String,
+    /// field that will determine the actual result
+    pub answer_bool: bool,
+}
+
+pub(crate) fn schema_from_decision_question(question: &String) -> schemars::Schema {
+    let mut base_schema = schema_for!(Decision);
+    base_schema.get_mut("properties").map(|properties| {
+        properties.get_mut("question").map(|question_schema| {
+            *question_schema = json_schema!({"const": question}).as_value().clone()
+        })
+    });
+    base_schema
 }

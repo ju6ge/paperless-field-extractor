@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Added
+- new api endpoint to enable decision based workflows
 
 ## [0.3.0] - 2025-11-25
 
@@ -17,8 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `next_tag` parameter to Webhook endpoints, allowing better workflow stages
 - Changed Architecture to receive webhooks to trigger document processing
 - decouple sending updated documents to paperless from llm processing pipeline
-
-### Added
 - feature correspondent suggestion, let this software suggest correspondents
 
 ### Fixed

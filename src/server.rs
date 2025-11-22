@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, VecDeque},
+    hash::Hash,
     path::Path,
     sync::Arc,
     time::Duration,
@@ -45,15 +46,33 @@ use crate::{
     config::Config,
     extract::{LLModelExtractor, ModelError},
     requests,
-    types::{FieldError, custom_field_learning_supported},
+    types::{
+        Decision, FieldError, FieldExtract, custom_field_learning_supported,
+        schema_from_decision_question,
+    },
 };
 
-#[derive(Debug, PartialEq, Hash, Clone, Copy, Eq)]
+#[derive(Debug, PartialEq, Clone)]
 #[non_exhaustive]
 enum ProcessingType {
     CustomFieldPrediction,
     CorrespondentSuggest,
+    DecsionTagFlow {
+        question: String,
+        true_tag: Option<Tag>,
+        false_tag: Option<Tag>,
+    },
 }
+
+impl Hash for ProcessingType {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // this is only used to remove duplicate processing types in some operations
+        // these do not care about sub parameters, just about the kind of request
+        core::mem::discriminant(self).hash(state);
+    }
+}
+
+impl Eq for ProcessingType {}
 
 /// Most processing of document will involve feeding document data throuh a large languae model.
 /// Since LLM are notoriously resource intensive a task queue is used in order to facilitate asyncronous
@@ -94,6 +113,14 @@ async fn handle_correspondend_suggest(
         }
     })
     .await??;
+
+    log::debug!(
+        "Suggested new correspondent for doc {}: \n{extracted_correspondent:#?}",
+        doc.id
+    );
+
+    let extracted_correspondent: FieldExtract =
+        serde_json::from_value(extracted_correspondent).map_err(FieldError::from)?;
 
     let new_crrspndt = extracted_correspondent.to_correspondent(&crrspndts)?;
     doc.correspondent = Some(new_crrspndt.id);
@@ -141,6 +168,9 @@ async fn handle_custom_field_prediction(
             })
             .await??;
 
+            let extracted_cf: FieldExtract =
+                serde_json::from_value(extracted_cf).map_err(FieldError::from)?;
+
             if let Ok(cf_value) = extracted_cf.to_custom_field_instance(&cf).map_err(|err| {
                 log::error!("{err}");
                 err
@@ -168,6 +198,53 @@ async fn handle_custom_field_prediction(
     Ok(())
 }
 
+async fn handle_decision(
+    doc: &mut Document,
+    question: &String,
+    true_tag: Option<&Tag>,
+    false_tag: Option<&Tag>,
+) -> Result<(), DocumentProcessingError> {
+    let decision_schema = schema_from_decision_question(question);
+
+    let doc_data = serde_json::to_value(&doc.content).unwrap();
+
+    let extracted_answer = spawn_blocking(move || {
+        let mut model_singleton = MODEL_SINGLETON.blocking_lock();
+        if let Some(model) = model_singleton.as_mut() {
+            model.extract(&doc_data, &decision_schema, false)
+        } else {
+            Err(crate::extract::ModelError::ModelNotLoaded)
+        }
+    })
+    .await??;
+
+    let extracted_decision: Decision =
+        serde_json::from_value(extracted_answer).map_err(FieldError::from)?;
+
+    log::debug!(
+        "Made decision on document {}\n{extracted_decision:#?}",
+        doc.id
+    );
+
+    if let Some(true_tag) = true_tag
+        && extracted_decision.answer_bool
+    {
+        if !doc.tags.contains(&true_tag.id) {
+            doc.tags.push(true_tag.id);
+        }
+    }
+
+    if let Some(false_tag) = false_tag
+        && !extracted_decision.answer_bool
+    {
+        if !doc.tags.contains(&false_tag.id) {
+            doc.tags.push(false_tag.id);
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 enum WebhookError {
     #[error("Document with id `{0}` does not exist!")]
@@ -178,6 +255,24 @@ enum WebhookError {
     DocumentUrlParsingIDFailed,
     #[error("Document Url points to a server unrelated to this configuration. Ignoring Request")]
     ReceivedRequestFromUnconfiguredServer,
+    #[error("Request specified tag {0}, but it could not be found, neither id nor name exists!")]
+    TagNotFound(String),
+    #[error(
+        "The request is configured in a way that nothing is going to happen when the request completes, so it will be ignored!"
+    )]
+    RequestWithoutEffect,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct DecisionTagFlowRequest {
+    /// url of the document that should be processed
+    document_url: String,
+    /// question about the document, should be answerable with true/false
+    question: String,
+    /// optional tag to assign if answer is true
+    true_tag: Option<String>,
+    /// optional tag to assign if the answer is false
+    false_tag: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -280,6 +375,94 @@ impl WebhookParams {
     }
 }
 
+#[utoipa::path(tag = "llm_workflow_trigger", request_body = inline(DecisionTagFlowRequest))]
+#[post("/decision")]
+/// ask a question that can be answered with true or false about the document
+///
+/// The goal of this endpoint is to enable decision based workflows in paperless. Ask a question about the document and
+/// if the answer is true the document will be assigend the `true_tag`. If not and the `false_tag` is specified it will be assigned.
+/// This enables doing `if/else` style workflows by using tagging to conditionally trigger further processing steps.
+///
+/// If neither `false_tag` nor `true_tag` are specified the request will be discared since the result would have no effect!
+async fn decision(
+    params: web::Json<DecisionTagFlowRequest>,
+    status_tags: Data<PaperlessStatusTags>,
+    api_client: Data<Client>,
+    config: Data<Config>,
+    document_pipeline: web::Data<tokio::sync::mpsc::UnboundedSender<DocumentProcessingRequest>>,
+) -> Result<HttpResponse, WebhookError> {
+    let mut api_client_cloned =
+        Arc::<Client>::make_mut(&mut api_client.clone().into_inner()).clone();
+    let mut true_tag = None;
+    if let Some(tt_to_parse) = &params.true_tag {
+        if let Ok(tt_as_id) = tt_to_parse.parse::<i64>() {
+            true_tag =
+                requests::fetch_tag_by_id_or_name(&mut api_client_cloned, None, Some(tt_as_id))
+                    .await;
+        } else {
+            true_tag = requests::fetch_tag_by_id_or_name(
+                &mut api_client_cloned,
+                Some(tt_to_parse.clone()),
+                None,
+            )
+            .await;
+        }
+    }
+    // a true tag is expected, if none could be found then the request is invalid
+    if true_tag.is_none() && params.true_tag.is_some() {
+        return Err(WebhookError::TagNotFound(params.true_tag.clone().unwrap()));
+    }
+
+    let mut false_tag = None;
+    if let Some(ft_to_parse) = &params.false_tag {
+        if let Ok(ft_as_id) = ft_to_parse.parse::<i64>() {
+            false_tag =
+                requests::fetch_tag_by_id_or_name(&mut api_client_cloned, None, Some(ft_as_id))
+                    .await;
+        } else {
+            false_tag = requests::fetch_tag_by_id_or_name(
+                &mut api_client_cloned,
+                Some(ft_to_parse.clone()),
+                None,
+            )
+            .await;
+        }
+    }
+
+    // if the request specified a false tag but it could not be found, this is also an error
+    // since the user specifically wants to have a tag on false result, if the tag does not
+    // exists then this will not work, so the request is invalid
+    if false_tag.is_none() && params.false_tag.is_some() {
+        return Err(WebhookError::TagNotFound(params.false_tag.clone().unwrap()));
+    }
+
+    if true_tag.is_none() && false_tag.is_none() {
+        return Err(WebhookError::RequestWithoutEffect);
+    }
+
+    let process_type = ProcessingType::DecsionTagFlow {
+        question: params.question.clone(),
+        true_tag: true_tag,
+        false_tag: false_tag,
+    };
+
+    let generic_webhook_params = WebhookParams {
+        document_url: params.document_url.clone(),
+        next_tag: None,
+    };
+
+    generic_webhook_params
+        .handle_request(
+            status_tags,
+            api_client,
+            config,
+            document_pipeline,
+            process_type,
+        )
+        .await?;
+    Ok(HttpResponse::Accepted().into())
+}
+
 #[utoipa::path(tag = "llm_workflow_trigger")]
 #[post("/suggest/correspondent")]
 /// Workflow to suggest a correspondent for a document
@@ -313,9 +496,9 @@ async fn suggest_correspondent(
 /// Workflow to fill unfilled custom fields on a document
 ///
 /// Scan document for unfilled custom fields and use llm to predict the values from the document content.
-/// 
+///
 /// ## Supported Custom Field Types
-/// 
+///
 /// Currently this projects predicting the following kinds of custom fields:
 /// - [x] Boolean
 /// - [x] Date
@@ -348,7 +531,7 @@ async fn custom_field_prediction(
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(suggest_correspondent, custom_field_prediction),
+    paths(suggest_correspondent, custom_field_prediction, decision),
     components(schemas(WebhookParams))
 )]
 pub(crate) struct DocumentProcessingApiSpec;
@@ -359,6 +542,7 @@ impl HttpServiceFactory for DocumentProcessingApi {
     fn register(self, config: &mut actix_web::dev::AppService) {
         custom_field_prediction.register(config);
         suggest_correspondent.register(config);
+        decision.register(config);
     }
 }
 
@@ -397,6 +581,18 @@ fn merge_document_status(
             }
         }
         ProcessingType::CorrespondentSuggest => doc.correspondent = updated_doc.correspondent,
+        ProcessingType::DecsionTagFlow {
+            question: _,
+            true_tag: _,
+            false_tag: _,
+        } => {
+            // this processing type adds tags to the document
+            for updated_tag in &updated_doc.tags {
+                if !doc.tags.contains(updated_tag) {
+                    doc.tags.push(*updated_tag);
+                }
+            }
+        }
     }
 }
 
@@ -468,6 +664,14 @@ async fn document_updater(
                     }
                     ProcessingType::CorrespondentSuggest => {
                         updated_crrspdnt = doc_req.document.correspondent;
+                    }
+                    ProcessingType::DecsionTagFlow {
+                        question: _,
+                        true_tag: _,
+                        false_tag: _,
+                    } => {
+                        // nothing needs to happen here, the updated tags are already part of the document
+                        // since they are synced with the same document in the queue
                     }
                 }
             }
@@ -552,6 +756,19 @@ async fn document_processor(
                 ProcessingType::CorrespondentSuggest => {
                     handle_correspondend_suggest(&mut doc_process_req.document, &mut api_client)
                         .await
+                }
+                ProcessingType::DecsionTagFlow {
+                    ref question,
+                    ref true_tag,
+                    ref false_tag,
+                } => {
+                    handle_decision(
+                        &mut doc_process_req.document,
+                        question,
+                        true_tag.as_ref(),
+                        false_tag.as_ref(),
+                    )
+                    .await
                 }
             };
 

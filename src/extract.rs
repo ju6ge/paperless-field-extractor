@@ -15,8 +15,6 @@ use thiserror::Error;
 
 use gbnf::{self, GrammarItem, NonTerminalSymbol, ProductionItem, RepetitionType, TerminalSymbol};
 
-use crate::types::FieldExtract;
-
 fn gen_gbnf(schema: &schemars::Schema, eos_token: String) -> String {
     let js = &serde_json::to_string(schema.as_value()).unwrap();
     let mut gram = gbnf::Grammar::from_json_schema(&js)
@@ -109,7 +107,7 @@ impl LLModelExtractor {
         base_data: &Value,
         response_schema: &Schema,
         dry_run: bool,
-    ) -> Result<FieldExtract, ModelError> {
+    ) -> Result<Value, ModelError> {
         let grammar = gen_gbnf(response_schema, self.eos_string.to_string());
         let mut sampler = LlamaSampler::chain_simple([
             LlamaSampler::grammar(&self.model, &grammar, "root").unwrap(),
