@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, VecDeque},
+    hash::Hash,
     path::Path,
     sync::Arc,
     time::Duration,
@@ -48,12 +49,27 @@ use crate::{
     types::{FieldError, custom_field_learning_supported},
 };
 
-#[derive(Debug, PartialEq, Hash, Clone, Copy, Eq)]
+#[derive(Debug, PartialEq, Clone)]
 #[non_exhaustive]
 enum ProcessingType {
     CustomFieldPrediction,
     CorrespondentSuggest,
+    DecsionTagFlow {
+        question: String,
+        true_tag: Tag,
+        false_tag: Option<Tag>,
+    },
 }
+
+impl Hash for ProcessingType {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // this is only used to remove duplicate processing types in some operations
+        // these do not care about sub parameters, just about the kind of request
+        core::mem::discriminant(self).hash(state);
+    }
+}
+
+impl Eq for ProcessingType {}
 
 /// Most processing of document will involve feeding document data throuh a large languae model.
 /// Since LLM are notoriously resource intensive a task queue is used in order to facilitate asyncronous
@@ -181,6 +197,18 @@ enum WebhookError {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct DecisionTagFlowRequest {
+    /// url of the document that should be processed
+    document_url: String,
+    /// question about the document, should be answerable with true/false
+    question: String,
+    /// tag to assign if answer is true
+    true_tag: String,
+    /// optional tag to assign if the answer is false
+    false_tag: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 /// General webhook parameters any workflow trigger will accept this type
 struct WebhookParams {
     /// url of the document that should be processed
@@ -280,6 +308,23 @@ impl WebhookParams {
     }
 }
 
+#[utoipa::path(tag = "llm_workflow_trigger", request_body = inline(DecisionTagFlowRequest))]
+#[post("/decision")]
+/// ask a question that can be answered with true or false about the document
+///
+/// The goal of this endpoint is to enable decision based workflows in paperless. Ask a question about the document and
+/// if the answer is true the document will be assigend the `true_tag`. If not and the `false_tag` is specified it will be assigned.
+/// This enables doing `if/else` style workflows by using tagging to conditionally trigger further processing steps.
+async fn decision(
+    params: web::Json<DecisionTagFlowRequest>,
+    status_tags: Data<PaperlessStatusTags>,
+    api_client: Data<Client>,
+    config: Data<Config>,
+    document_pipeline: web::Data<tokio::sync::mpsc::UnboundedSender<DocumentProcessingRequest>>,
+) -> Result<HttpResponse, WebhookError> {
+    todo!()
+}
+
 #[utoipa::path(tag = "llm_workflow_trigger")]
 #[post("/suggest/correspondent")]
 /// Workflow to suggest a correspondent for a document
@@ -313,9 +358,9 @@ async fn suggest_correspondent(
 /// Workflow to fill unfilled custom fields on a document
 ///
 /// Scan document for unfilled custom fields and use llm to predict the values from the document content.
-/// 
+///
 /// ## Supported Custom Field Types
-/// 
+///
 /// Currently this projects predicting the following kinds of custom fields:
 /// - [x] Boolean
 /// - [x] Date
@@ -348,7 +393,7 @@ async fn custom_field_prediction(
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(suggest_correspondent, custom_field_prediction),
+    paths(suggest_correspondent, custom_field_prediction, decision),
     components(schemas(WebhookParams))
 )]
 pub(crate) struct DocumentProcessingApiSpec;
@@ -359,6 +404,7 @@ impl HttpServiceFactory for DocumentProcessingApi {
     fn register(self, config: &mut actix_web::dev::AppService) {
         custom_field_prediction.register(config);
         suggest_correspondent.register(config);
+        decision.register(config);
     }
 }
 
@@ -397,6 +443,7 @@ fn merge_document_status(
             }
         }
         ProcessingType::CorrespondentSuggest => doc.correspondent = updated_doc.correspondent,
+        _ => todo!(),
     }
 }
 
@@ -469,6 +516,7 @@ async fn document_updater(
                     ProcessingType::CorrespondentSuggest => {
                         updated_crrspdnt = doc_req.document.correspondent;
                     }
+                    _ => todo!(),
                 }
             }
 
@@ -553,6 +601,7 @@ async fn document_processor(
                     handle_correspondend_suggest(&mut doc_process_req.document, &mut api_client)
                         .await
                 }
+                _ => todo!(),
             };
 
             let mut doc_in_queue_again = false;
