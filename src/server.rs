@@ -283,6 +283,12 @@ impl WebhookParams {
 #[utoipa::path(tag = "llm_workflow_trigger")]
 #[post("/suggest/correspondent")]
 /// Workflow to suggest a correspondent for a document
+///
+/// Given the document content and all possible correspondents select a correspondent using a
+/// reasoning approach. This workflow might take longer given the llm reasoning!
+///
+/// Afterwards set the correspondent of the document, sadly just adding it as another suggestion is not supported
+/// by the paperless api.
 async fn suggest_correspondent(
     params: web::Json<WebhookParams>,
     status_tags: Data<PaperlessStatusTags>,
@@ -305,6 +311,22 @@ async fn suggest_correspondent(
 #[utoipa::path(tag = "llm_workflow_trigger")]
 #[post("/fill/custom_fields")]
 /// Workflow to fill unfilled custom fields on a document
+///
+/// Scan document for unfilled custom fields and use llm to predict the values from the document content.
+/// 
+/// ## Supported Custom Field Types
+/// 
+/// Currently this projects predicting the following kinds of custom fields:
+/// - [x] Boolean
+/// - [x] Date
+/// - [x] Integer
+/// - [x] Number
+/// - [x] Monetary
+/// - [x] Text
+/// - [x] Select
+/// - [ ] Document Link
+/// - [ ] URL
+/// - [ ] LargeText
 async fn custom_field_prediction(
     params: web::Json<WebhookParams>,
     status_tags: Data<PaperlessStatusTags>,

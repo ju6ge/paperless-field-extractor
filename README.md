@@ -33,22 +33,10 @@ To integrate a functionality into paperless you need add it as webhook trigger i
 
 ![Paperless Webhook](./example-workflow-action.png)
 
-# Custom Field Value Prediction
-
-## Supported Custom Field Types
-
-Currently this projects predicting the following kinds of custom fields:
-- [x] Boolean
-- [x] Date
-- [x] Integer
-- [x] Number
-- [x] Monetary
-- [x] Text
-- [x] Select
-- [ ] Document Link
-- [ ] URL
-- [ ] LargeText
-
+When a webhook gets triggered the document will be added to the processing queue of `paperless-llm-workflows` with the corresponding action. The document will be given a 
+`processing` tag to make paperless users aware that the document still has pending updates. Once all processing requests for a document have been completed the document will 
+be updated with the results and is given a `finished` tag. If you wish to assign a specific tag on process completion there is an extra parameter too the webhook which you 
+can use to overwrite what tag will be assigned once the processing step has completed.
 
 # Configuration
 
