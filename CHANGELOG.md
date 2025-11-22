@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Rename Project to `paperless-llm-workflows`
+
 ## Added
 - Added openapi specs for workflow trigger server endpoints
 - Added `next_tag` parameter to Webhook endpoints, allowing better workflow stages

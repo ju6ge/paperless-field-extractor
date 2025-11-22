@@ -1,4 +1,4 @@
-paperless-field-extractor
+paperless-llm-workflows
 =========================
 
 This project is an extension to the excellent [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) software.
