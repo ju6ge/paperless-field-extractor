@@ -1,9 +1,10 @@
-use std::{path::Path, process::exit};
+use std::{env::args, path::Path, process::exit};
 
 use clap::Parser;
 use config::{Config, OverlayConfig};
 use paperless_api_client::Client;
 use server::run_server;
+use utoipa::OpenApi;
 
 mod config;
 mod extract;
@@ -37,13 +38,21 @@ compile_error!(
 #[clap(author, version, about, long_about = None)]
 struct Args {
     #[clap(long, default_value_t = false, action)]
-    dry_run: bool,
+    gen_api_spec: bool,
 }
 
 #[tokio::main]
 async fn main() {
-    let _args = Args::parse();
+    let args = Args::parse();
     colog::init();
+
+    if args.gen_api_spec {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&server::DocumentProcessingApiSpec::openapi()).unwrap()
+        );
+        exit(0);
+    }
 
     let config = Config::default()
         .overlay_config(OverlayConfig::read_config_toml(Path::new(

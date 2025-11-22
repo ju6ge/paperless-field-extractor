@@ -351,7 +351,7 @@ async fn custom_field_prediction(
     paths(suggest_correspondent, custom_field_prediction),
     components(schemas(WebhookParams))
 )]
-struct DocumentProcessingApiSpec;
+pub(crate) struct DocumentProcessingApiSpec;
 
 struct DocumentProcessingApi;
 
