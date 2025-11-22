@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added openapi specs for workflow trigger server endpoints
 - Added `next_tag` parameter to Webhook endpoints, allowing better workflow stages
 - Changed Architecture to receive webhooks to trigger document processing
+- decouple sending updated documents to paperless from llm processing pipeline
 
 ### Added
 - feature correspondent suggestion, let this software suggest correspondents
