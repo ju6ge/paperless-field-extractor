@@ -29,6 +29,8 @@ This project spawns an API server that can be integrated to provide custom proce
 
 After starting the service you can navigate to `http://{paperless-llm-workflows.ip}:8123/api/` to get an up to date API documentation describing all the endpoints.
 
+If you wish to inspect the documentation online here is a [preview link](https://redocly.github.io/redoc/?url=https://raw.githubusercontent.com/ju6ge/paperless-field-extractor/refs/heads/master/openapi.json).
+
 To integrate a functionality into paperless you need add it as webhook trigger in your paperless worflows:
 
 ![Paperless Webhook](./example-workflow-action.png)
@@ -37,6 +39,11 @@ When a webhook gets triggered the document will be added to the processing queue
 `processing` tag to make paperless users aware that the document still has pending updates. Once all processing requests for a document have been completed the document will 
 be updated with the results and is given a `finished` tag. If you wish to assign a specific tag on process completion there is an extra parameter too the webhook which you 
 can use to overwrite what tag will be assigned once the processing step has completed.
+
+As of now the following llm workflows are availible:
+- `/fill/custom_fields`: For all supported custom fields datatypes extract value from document content
+- `/suggest/correspondent`: Suggest document correspondent by using reasoning
+
 
 # Configuration
 
