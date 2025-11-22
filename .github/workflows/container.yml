@@ -32,7 +32,7 @@ jobs:
           context: .
           file: ${{ env.DOCKERFILE }}
           push: true
-          tags: ghcr.io/ju6ge/paperless-field-extractor:latest-vulkan, ghcr.io/ju6ge/paperless-field-extractor:${{ env.RELEASE_VERSION }}-vulkan
+          tags: ghcr.io/ju6ge/paperless-llm-workflows:latest-vulkan, ghcr.io/ju6ge/paperless-llm-workflows:${{ env.RELEASE_VERSION }}-vulkan
           build-args: |
             INFERENCE_BACKEND=vulkan
           

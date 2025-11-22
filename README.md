@@ -94,7 +94,7 @@ The default container is setup to include a model already and with some environm
     -e PAPERLESS_API_CLIENT_API_TOKEN=<token> \
     -e PAPERLESS_SERVER=<paperless_ngx_url> \
     -e PAPERLESS_USER=<user> \ # used for tag creation
-    ghcr.io/ju6ge/paperless-field-extractor:<version>-<backend>
+    ghcr.io/ju6ge/paperless-llm-workflows:<version>-<backend>
 ```
 
 Currently only the `vulkan` backend has a prebuilt container availible, it should be fine for most deployments even without a graphics processor availible.
@@ -107,7 +107,7 @@ You can also build the container locally if you prefer. For this the following c
 ``` sh
 <podman/docker> build \
     -f distribution/docker/Dockerfile \
-    -t localhost/paperless-field-extractor:vulkan \
+    -t localhost/paperless-llm-workflows:vulkan \
     --build-arg INFERENCE_BACKEND=<backend> \  #this argument is required to select the compute backend, cuda is currenly not supported by the docker build 
     --build-arg MODEL_URL=<url> \  #optionaly you can point the build process to include a different gguf model by providing a download url
     --build-arg MODEL_LICENSE_URL=<url> \  #if you change the model, consider including its license in the container build 
