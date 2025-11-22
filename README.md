@@ -38,7 +38,9 @@ To integrate a functionality into paperless you need add it as webhook trigger i
 When a webhook gets triggered the document will be added to the processing queue of `paperless-llm-workflows` with the corresponding action. The document will be given a 
 `processing` tag to make paperless users aware that the document still has pending updates. Once all processing requests for a document have been completed the document will 
 be updated with the results and is given a `finished` tag. If you wish to assign a specific tag on process completion there is an extra parameter too the webhook which you 
-can use to overwrite what tag will be assigned once the processing step has completed.
+can use to overwrite what tag will be assigned once the processing step has completed. This process is shown in the following sequence diagram.
+
+![LLM Workflow Sequence](./workflow_api_sequence.svg)
 
 As of now the following llm workflows are availible:
 - `/fill/custom_fields`: For all supported custom fields datatypes extract value from document content

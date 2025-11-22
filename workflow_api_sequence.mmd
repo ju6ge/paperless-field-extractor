@@ -1,0 +1,8 @@
+sequenceDiagram
+    paperless-ngx->>paperless-llm-workflows: /fill/custom_fields { doc_url: "link" }
+    activate paperless-llm-workflows
+    paperless-llm-workflows->>paperless-ngx: set `procssing` tag for document
+
+    paperless-llm-workflows->>paperless-ngx: <br/><br/><br/><br/> update doc with filled custom fields <br/> set `finished` tag
+    deactivate paperless-llm-workflows
+    
