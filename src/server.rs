@@ -111,6 +111,9 @@ async fn handle_correspondend_suggest(
     })
     .await??;
 
+    let extracted_correspondent: FieldExtract =
+        serde_json::from_value(extracted_correspondent).map_err(FieldError::from)?;
+
     let new_crrspndt = extracted_correspondent.to_correspondent(&crrspndts)?;
     doc.correspondent = Some(new_crrspndt.id);
 
@@ -156,6 +159,9 @@ async fn handle_custom_field_prediction(
                 }
             })
             .await??;
+
+            let extracted_cf: FieldExtract =
+                serde_json::from_value(extracted_cf).map_err(FieldError::from)?;
 
             if let Ok(cf_value) = extracted_cf.to_custom_field_instance(&cf).map_err(|err| {
                 log::error!("{err}");

@@ -109,7 +109,7 @@ impl LLModelExtractor {
         base_data: &Value,
         response_schema: &Schema,
         dry_run: bool,
-    ) -> Result<FieldExtract, ModelError> {
+    ) -> Result<Value, ModelError> {
         let grammar = gen_gbnf(response_schema, self.eos_string.to_string());
         let mut sampler = LlamaSampler::chain_simple([
             LlamaSampler::grammar(&self.model, &grammar, "root").unwrap(),
