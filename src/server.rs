@@ -1,4 +1,9 @@
-use std::{collections::VecDeque, path::Path, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    path::Path,
+    sync::Arc,
+    time::Duration,
+};
 
 use actix_web::{
     App, HttpResponse, HttpServer, ResponseError,
@@ -11,7 +16,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use paperless_api_client::{
     Client,
-    types::{CustomField, Document, Tag},
+    types::{CustomField, CustomFieldInstance, Document, Tag},
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -43,7 +48,7 @@ use crate::{
     types::{FieldError, custom_field_learning_supported},
 };
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Hash, Clone, Copy, Eq)]
 #[non_exhaustive]
 enum ProcessingType {
     CustomFieldPrediction,
@@ -72,7 +77,7 @@ enum DocumentProcessingError {
 }
 
 async fn handle_correspondend_suggest(
-    doc: &Document,
+    doc: &mut Document,
     api_client: &mut Client,
 ) -> Result<(), DocumentProcessingError> {
     let crrspndts = requests::fetch_all_correspondents(api_client).await;
@@ -91,8 +96,10 @@ async fn handle_correspondend_suggest(
     .await??;
 
     let new_crrspndt = extracted_correspondent.to_correspondent(&crrspndts)?;
-    requests::update_doc_correspondent(api_client, doc, &new_crrspndt).await?;
+    doc.correspondent = Some(new_crrspndt.id);
 
+    // defered sync back to paperless instance
+    // after successfull finish the state of document on paperless will be updated by the update task
     Ok(())
 }
 
@@ -119,8 +126,6 @@ async fn handle_custom_field_prediction(
         }
         learning_supported
     }).collect();
-
-    let mut updated_custom_fields = false;
 
     for cf in relevant_custom_fields {
         let doc_data = serde_json::to_value(&doc).unwrap();
@@ -154,22 +159,12 @@ async fn handle_custom_field_prediction(
                         }
                     }
                 });
-                updated_custom_fields = true;
             }
         }
     }
 
-    // after custom fields have been changed on the document sync state back to paperless
-    if updated_custom_fields {
-        let mut cf_list = Vec::new();
-        if let Some(doc_fields) = doc.custom_fields.as_ref() {
-            for cf in doc_fields {
-                cf_list.push(cf.clone());
-            }
-        }
-        requests::update_document_custom_fields(api_client, doc, &cf_list).await?;
-    }
-
+    // defered sync back to paperless instance
+    // after successfull finish the state of document on paperless will be updated by the update task
     Ok(())
 }
 
@@ -345,12 +340,160 @@ impl HttpServiceFactory for DocumentProcessingApi {
     }
 }
 
+/// given an updated document add changes from processing type to other instances of the document
+///
+/// the purpose of this function is the following situation, given a document may be present multiple times in the processing queue
+/// and with later document versions having potentially more information in them this function should update later versions of the
+/// document with data from previously run processing steps without loosing any additional data. The goal being to mininmize the amount
+/// of back communication with the paperless server to avoid updating documents multiple times and triggering workflows unnecessarìly
+fn merge_document_status(
+    doc: &mut Document,
+    updated_doc: &Document,
+    processing_type: &ProcessingType,
+) {
+    if doc.id != updated_doc.id {
+        // if document ids do not match stop here!
+        return;
+    }
+    match processing_type {
+        ProcessingType::CustomFieldPrediction => {
+            if let Some(updated_custom_fields) = &updated_doc.custom_fields {
+                for updated_cf in updated_custom_fields {
+                    doc.custom_fields.as_mut().map(|doc_custom_fields| {
+                        let mut cf_found = false;
+                        for doc_cf_i in &mut *doc_custom_fields {
+                            if doc_cf_i.field == updated_cf.field {
+                                cf_found = true;
+                                doc_cf_i.value = updated_cf.value.clone()
+                            }
+                        }
+                        if !cf_found {
+                            doc_custom_fields.push(updated_cf.clone());
+                        }
+                    });
+                }
+            }
+        }
+        ProcessingType::CorrespondentSuggest => doc.correspondent = updated_doc.correspondent,
+    }
+}
+
+/// this jobs function is to receive the processed and send the results back the paperless instance
+///
+/// the goal is to minimize traffic to the paperless instance and avoid waiting for api requests
+async fn document_updater(
+    status_tags: PaperlessStatusTags,
+    mut api_client: Client,
+    mut document_update_channel: tokio::sync::mpsc::UnboundedReceiver<
+        Result<
+            (DocumentProcessingRequest, bool),
+            (DocumentProcessingError, DocumentProcessingRequest, bool),
+        >,
+    >,
+) {
+    let mut defered_doc_updates: BTreeMap<i64, Vec<ProcessingType>> = BTreeMap::new();
+
+    while let Some(doc_update) = document_update_channel.recv().await {
+        let mut _maybe_error = None;
+        let same_doc_in_queue_again;
+        let doc_req = match doc_update {
+            Ok((doc_req, queued_again)) => {
+                same_doc_in_queue_again = queued_again;
+                doc_req
+            }
+            Err((err, doc_req, queued_again)) => {
+                same_doc_in_queue_again = queued_again;
+                _maybe_error = Some(err);
+                doc_req
+            }
+        };
+
+        // if there are now further processing steps pending for the document then it's
+        // state can be synced back to the paperless server and all processing tags removed
+        // finshed / next tag will be set
+        if !same_doc_in_queue_again {
+            let updated_doc_tags: Vec<i64> = doc_req
+                .document
+                .tags
+                .iter()
+                .map(|t| *t)
+                .filter(|t| *t != status_tags.processing.id)
+                .chain(if doc_req.overwrite_finshed_tag.is_none() {
+                    [status_tags.finished.id].into_iter()
+                } else {
+                    [doc_req.overwrite_finshed_tag.as_ref().unwrap().id].into_iter()
+                })
+                .unique()
+                .collect();
+
+            let mut updated_cf: Option<Vec<CustomFieldInstance>> = None;
+            let mut updated_crrspdnt: Option<i64> = None;
+
+            for doc_processing_steps in vec![doc_req.processing_type]
+                .iter()
+                .chain(
+                    defered_doc_updates
+                        .get(&doc_req.document.id)
+                        .unwrap_or(&Vec::new()),
+                )
+                .unique()
+            {
+                match doc_processing_steps {
+                    ProcessingType::CustomFieldPrediction => {
+                        if let Some(cfis) = doc_req.document.custom_fields.as_ref() {
+                            updated_cf = Some(cfis.clone());
+                        }
+                    }
+                    ProcessingType::CorrespondentSuggest => {
+                        updated_crrspdnt = doc_req.document.correspondent;
+                    }
+                }
+            }
+
+            let _ = requests::processed_doc_update(
+                &mut api_client,
+                doc_req.document.id,
+                updated_doc_tags,
+                updated_crrspdnt,
+                updated_cf,
+            )
+            .await
+            .map_err(|err| {
+                log::error!("{err}");
+                err
+            });
+        } else {
+            // remember how document has been processed until now for defered update later
+            if defered_doc_updates.contains_key(&doc_req.document.id) {
+                if defered_doc_updates
+                    .get(&doc_req.document.id)
+                    .is_some_and(|v| v.contains(&doc_req.processing_type))
+                {
+                    continue;
+                } else {
+                    if let Some(v) = defered_doc_updates.get_mut(&doc_req.document.id).as_mut() {
+                        v.push(doc_req.processing_type);
+                    }
+                }
+            } else {
+                defered_doc_updates.insert(doc_req.document.id, vec![doc_req.processing_type]);
+            }
+        }
+    }
+}
+
 // future performance optimization needs to focus on this function, it should dispatch to batch processing of documents
 // or could combine requests to the same document in the queue.
+/// this jobs functions it to batch process documents using the llm and send the results on to the update handler
 async fn document_processor(
     config: Config,
     mut api_client: Client,
-    status_tags: PaperlessStatusTags,
+    document_update_channel: tokio::sync::mpsc::UnboundedSender<
+        Result<
+            (DocumentProcessingRequest, bool),
+            (DocumentProcessingError, DocumentProcessingRequest, bool),
+        >,
+    >,
 ) {
     while !*STOP_FLAG.read().await {
         while PROCESSING_QUEUE.read().await.len() > 0 {
@@ -370,67 +513,55 @@ async fn document_processor(
                     .ok();
                 }
             }
-            let mut doc_process_req = PROCESSING_QUEUE
-                .write()
-                .await
-                .pop_front()
-                .expect("Size is greater 0 so there must be a document in the queue");
-            if match doc_process_req.processing_type {
+            let mut doc_process_req = {
+                // nesting here to ensure write lock is dropped while processing the document in the next step
+                PROCESSING_QUEUE
+                    .write()
+                    .await
+                    .pop_front()
+                    .expect("Size is greater 0 so there must be a document in the queue")
+            };
+
+            let processing_result = match doc_process_req.processing_type {
                 ProcessingType::CustomFieldPrediction => {
                     handle_custom_field_prediction(&mut doc_process_req.document, &mut api_client)
                         .await
                 }
                 ProcessingType::CorrespondentSuggest => {
-                    handle_correspondend_suggest(&doc_process_req.document, &mut api_client).await
+                    handle_correspondend_suggest(&mut doc_process_req.document, &mut api_client)
+                        .await
                 }
-            }
-            .map_err(|err| {
-                log::error!("{err}");
-                err
-            })
-            .is_ok()
-            {
-                let mut same_doc_in_queue_again = false;
-                // if updateing the document was successfull all other reference to the same document in later
-                // processing requests need to be updated
-                {
-                    for doc_other_request in PROCESSING_QUEUE.write().await.iter_mut() {
-                        if doc_other_request.document.id == doc_process_req.document.id {
-                            same_doc_in_queue_again = true;
-                            doc_other_request.document = doc_other_request.document.clone();
+            };
+
+            let mut doc_in_queue_again = false;
+            match processing_result {
+                Ok(_) => {
+                    // if the same document has more processing requests pending update the doc state to
+                    // also contain the newly added data.
+                    for next_process_req in PROCESSING_QUEUE.write().await.iter_mut() {
+                        if next_process_req.document.id == doc_process_req.document.id {
+                            doc_in_queue_again = true;
+                            merge_document_status(
+                                &mut next_process_req.document,
+                                &doc_process_req.document,
+                                &doc_process_req.processing_type,
+                            );
                         }
                     }
+                    let _ = document_update_channel.send(Ok((doc_process_req, doc_in_queue_again)));
                 }
-
-                // if no further processing request are in the pipeline for the same document, then remove processing tag
-                // and set finished tag
-                if !same_doc_in_queue_again || doc_process_req.overwrite_finshed_tag.is_some() {
-                    let updated_doc_tags: Vec<i64> = doc_process_req
-                        .document
-                        .tags
+                Err(err) => {
+                    doc_in_queue_again = PROCESSING_QUEUE
+                        .read()
+                        .await
                         .iter()
-                        .map(|t| *t)
-                        .filter(|t| {
-                            *t != status_tags.processing.id
-                                || (*t == status_tags.processing.id && same_doc_in_queue_again)
-                        })
-                        .chain(if doc_process_req.overwrite_finshed_tag.is_none() {
-                            [status_tags.finished.id].into_iter()
-                        } else {
-                            [doc_process_req.overwrite_finshed_tag.as_ref().unwrap().id].into_iter()
-                        })
-                        .unique()
-                        .collect();
-                    let _ = requests::update_document_tag_ids(
-                        &mut api_client,
-                        &mut doc_process_req.document,
-                        &updated_doc_tags,
-                    )
-                    .await
-                    .map_err(|err| {
-                        log::error!("{err}");
-                        err
-                    });
+                        .map(|doc_req| doc_req.document.id)
+                        .contains(&doc_process_req.document.id);
+                    let _ = document_update_channel.send(Err((
+                        err,
+                        doc_process_req,
+                        doc_in_queue_again,
+                    )));
                 }
             }
         }
@@ -473,18 +604,24 @@ pub async fn run_server(
     paperless_api_client: Client,
 ) -> Result<(), std::io::Error> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DocumentProcessingRequest>();
+    let (tx_update, rx_update) = tokio::sync::mpsc::unbounded_channel();
 
     let status_tags = PaperlessStatusTags {
         processing: processing_tag,
         finished: finished_tag,
     };
 
+    let doc_to_process_queue = spawn(document_request_funnel(rx));
     let doc_processor = spawn(document_processor(
         config.clone(),
         paperless_api_client.clone(),
-        status_tags.clone(),
+        tx_update,
     ));
-    let doc_to_process_queue = spawn(document_request_funnel(rx));
+    let doc_update_task = spawn(document_updater(
+        status_tags.clone(),
+        paperless_api_client.clone(),
+        rx_update,
+    ));
     let webhook_server = HttpServer::new(move || {
         let app = App::new()
             .app_data(Data::new(tx.clone()))
@@ -502,7 +639,12 @@ pub async fn run_server(
     .bind(("0.0.0.0", 8123))?
     .run();
 
-    let _ = join!(webhook_server, doc_to_process_queue, doc_processor);
+    let _ = join!(
+        webhook_server,
+        doc_to_process_queue,
+        doc_processor,
+        doc_update_task
+    );
 
     Ok(())
 }
