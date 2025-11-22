@@ -1745,8 +1745,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "paperless-field-extractor"
-version = "0.1.2"
+name = "paperless-llm-workflows"
+version = "0.3.0"
 dependencies = [
  "actix-web",
  "chrono",
