@@ -394,8 +394,8 @@ async fn document_updater(
     let mut defered_doc_updates: BTreeMap<i64, Vec<ProcessingType>> = BTreeMap::new();
 
     while let Some(doc_update) = document_update_channel.recv().await {
-        let mut maybe_error = None;
-        let mut same_doc_in_queue_again = false;
+        let mut _maybe_error = None;
+        let same_doc_in_queue_again;
         let doc_req = match doc_update {
             Ok((doc_req, queued_again)) => {
                 same_doc_in_queue_again = queued_again;
@@ -403,7 +403,7 @@ async fn document_updater(
             }
             Err((err, doc_req, queued_again)) => {
                 same_doc_in_queue_again = queued_again;
-                maybe_error = Some(err);
+                _maybe_error = Some(err);
                 doc_req
             }
         };
